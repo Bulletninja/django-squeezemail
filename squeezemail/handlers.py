@@ -42,7 +42,7 @@ HREF_RE = re.compile(r'href\="((\{\{[^}]+\}\}|[^"><])+)"')
 
 
 def configured_message_classes():
-    conf_dict = getattr(settings, 'DRIP_MESSAGE_CLASSES', {})
+    conf_dict = getattr(settings, 'SQUEEZE_DRIP_MESSAGE_CLASSES', {})
     if 'default' not in conf_dict:
         conf_dict['default'] = 'squeezemail.handlers.DripMessage'
     return conf_dict
