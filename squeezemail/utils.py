@@ -1,7 +1,6 @@
 import sys
 
 from django.db import models
-from django.db.models.fields.related import ForeignObjectRel
 from django.db.models.fields.related import (
     ForeignObjectRel, ManyToManyRel, ManyToOneRel, OneToOneRel, RelatedField
 )
@@ -228,5 +227,4 @@ def class_for(path):
 
 
 def get_token_for_email(email):
-    m = hashlib.md5(email.encode('utf-8') + settings.SECRET_KEY.encode('utf-8')).hexdigest().encode('utf-8')
-    return m
+    return hashlib.md5(email.encode('utf-8') + settings.SECRET_KEY.encode('utf-8')).hexdigest()

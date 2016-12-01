@@ -1,7 +1,12 @@
-from urllib.parse import urlparse, urlencode, urlunparse
+try:
+    # Python 3 imports
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+except ImportError:
+    # Python 2 imports
+    from urlparse import urlparse, parse_qs, urlunparse
+    from urllib import urlencode
 
 from django.contrib import messages
-from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect, HttpResponse
 from django.shortcuts import get_object_or_404
 

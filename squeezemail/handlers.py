@@ -32,7 +32,7 @@ from content_editor.renderer import PluginRenderer
 from .utils import get_token_for_email
 from . import SQUEEZE_CELERY_EMAIL_CHUNK_SIZE, SQUEEZE_DEFAULT_HTTP_PROTOCOL, SQUEEZE_DEFAULT_FROM_EMAIL
 from .tasks import send_drip, process_sent
-from .models import SendDrip, Subscriber, RichText, Image
+from .models import SendDrip, Subscriber, RichText
 from .utils import chunked
 
 
@@ -84,7 +84,7 @@ class DripMessage(object):
 
     def render_body(self):
         # import the custom renderer and do renderer.plugins() instead
-        contents = contents_for_item(self.drip, plugins=[Image, RichText])
+        contents = contents_for_item(self.drip, plugins=[RichText])
         # assert False, contents['body']
         body = renderer.render(contents['body']) #TODO: get split test feincms content here
         return body
@@ -126,7 +126,7 @@ class DripMessage(object):
         if not self._plain:
             h = html2text.HTML2Text()
             h.ignore_images = True
-            self._plain = render_to_string('squeezemail/email/plain.txt', self.context)
+            self._plain = h.handle(render_to_string('squeezemail/email/plain.txt', self.context))
         return self._plain
 
     @property

@@ -2,15 +2,15 @@ import json
 
 import html2text
 from django import forms
-from django.contrib import admin
 from django.template import Context
 from django.contrib.contenttypes.admin import GenericTabularInline
-
-from feincms3.admin import TreeAdmin
-from feincms3.plugins import AlwaysChangedModelForm
+from django.contrib import admin
+from mptt.admin import DraggableMPTTAdmin
+# from feincms3.admin import TreeAdmin
+# from feincms3.plugins import AlwaysChangedModelForm
 
 from .models import Drip, SendDrip, QuerySetRule, DripSubject, Subscriber, Decision,\
-    Delay, Step, Modify, Funnel, Image, RichText
+    Delay, Step, Modify, Funnel, RichText, Tag
 from .handlers import configured_message_classes, message_class_for
 
 from content_editor.admin import (
@@ -30,11 +30,12 @@ class QuerySetRuleInline(GenericTabularInline):
     media = property(_media)
 
 
-class StepAdmin(TreeAdmin):
+class StepAdmin(DraggableMPTTAdmin):
     model = Step
     generic_raw_id_fields = ['content_object']
-    raw_id_fields = ('parent',)
-    list_display = ('indented_title', 'move_column', 'get_active_subscribers_count')
+    # raw_id_fields = ('parent',)
+    list_display = ('tree_actions', 'indented_title', 'get_active_subscribers_count')
+    list_display_links = ('indented_title',)
 
 
 class DecisionAdmin(admin.ModelAdmin):
@@ -60,13 +61,6 @@ class DecisionAdmin(admin.ModelAdmin):
 
 class FunnelAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'get_subscription_count')
-
-
-admin.site.register(Step, StepAdmin)
-admin.site.register(Modify)
-admin.site.register(Delay)
-admin.site.register(Decision, DecisionAdmin)
-admin.site.register(Funnel, FunnelAdmin)
 
 
 class DripSplitSubjectInline(admin.TabularInline):
@@ -105,13 +99,13 @@ class RichTextInline(ContentEditorInline):
     model = RichText
 
     class Media:
-        js = ('feincms3/plugin_ckeditor.js',)
+        js = ('js/plugin_ckeditor.js',)
 
 
-class ImageInline(ContentEditorInline):
-    form = AlwaysChangedModelForm
-    model = Image
-    extra = 0
+# class ImageInline(ContentEditorInline):
+#     form = AlwaysChangedModelForm
+#     model = Image
+#     extra = 0
 
 
 class DripAdmin(ContentEditor):
@@ -125,12 +119,9 @@ class DripAdmin(ContentEditor):
     #     item_editor.FEINCMS_CONTENT_FIELDSET,
     #     ]
     list_display=(
-        # 'tree_actions',
-        # 'indented_title',
         'name',
         'enabled',
         'message_class'
-        # ...more fields if you feel like it...
     )
     # list_display_links=(
     #     'indented_title',
@@ -140,7 +131,7 @@ class DripAdmin(ContentEditor):
         DripSplitSubjectInline,
         QuerySetRuleInline,
         RichTextInline,
-        ImageInline
+        # ImageInline
     ]
     form = DripForm
 
@@ -226,16 +217,22 @@ class DripAdmin(ContentEditor):
         )
         return my_urls + urls
 
-# admin.site.register(Campaign, CampaignAdmin)
-# admin.site.register(CampaignSubscription)
-admin.site.register(Drip, DripAdmin)
-admin.site.register(Subscriber, SubscriberAdmin)
-
 
 class SendDripAdmin(admin.ModelAdmin):
     list_display = [f.name for f in SendDrip._meta.fields]
     ordering = ['-id']
 
+
+# admin.site.register(Campaign, CampaignAdmin)
+# admin.site.register(CampaignSubscription)
+admin.site.register(Drip, DripAdmin)
+admin.site.register(Subscriber, SubscriberAdmin)
+admin.site.register(Step, StepAdmin)
+admin.site.register(Modify)
+admin.site.register(Delay)
+admin.site.register(Tag)
+admin.site.register(Decision, DecisionAdmin)
+admin.site.register(Funnel, FunnelAdmin)
 admin.site.register(SendDrip, SendDripAdmin)
 
 # admin.site.register(

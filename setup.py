@@ -68,10 +68,8 @@ setup(
     long_description=open('README.rst').read(),
     install_requires=[
         "Django >= 1.9.-",
-        "feincms3 >= 0.11.0",
         "django-content-editor",
-        'django-cte-forest',
-        'django-versatileimagefield',
+        'django-mptt',
         "feincms-cleanse",
         "django-timedeltafield >= 0.7.10",
         "django-ckeditor",

@@ -9,7 +9,7 @@ from content_editor.renderer import PluginRenderer
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 
-from .models import RichText, Image
+from .models import RichText
 
 
 def render_plugin_with_template(plugin):
@@ -29,4 +29,4 @@ renderer.register(
 )
 
 # Render image to squeezemail/plugins/image.html template
-renderer.register(Image, render_plugin_with_template)
+# renderer.register(Image, render_plugin_with_template)

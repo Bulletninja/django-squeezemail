@@ -2,10 +2,13 @@ import functools
 import operator
 import logging
 # from collections import OrderedDict
-from _md5 import md5
+try:
+    from _md5 import md5  # Python 3
+except ImportError:
+    from hashlib import md5  # Python 2
 
-from cte_forest.models import CTENode
-from cte_forest.fields import DepthField, PathField, OrderingField
+# from cte_forest.models import CTENode
+# from cte_forest.fields import DepthField, PathField, OrderingField
 from django.db.models import Q
 from gfklookupwidget.fields import GfkLookupField
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
@@ -21,18 +24,19 @@ from django.utils import timezone
 # just using this to parse, but totally insane package naming...
 # https://bitbucket.org/schinckel/django-timedelta-field/
 import timedelta as djangotimedelta
-# from mptt.models import MPTTModel
+from mptt.models import MPTTModel, TreeForeignKey
+
 
 from squeezemail import SQUEEZE_DRIP_HANDLER
 from squeezemail import SQUEEZE_PREFIX
-from squeezemail import SQUEEZE_SUBSCRIBER_MANAGER
+# from squeezemail import SQUEEZE_SUBSCRIBER_MANAGER
+from squeezemail import plugins
 from squeezemail.utils import class_for, get_token_for_email
 
 # from mptt.models import MPTTModel, TreeForeignKey
 from content_editor.models import (
-    Template, Region, create_plugin_base
+    Region, create_plugin_base
 )
-from feincms3 import plugins
 
 logger = logging.getLogger(__name__)
 
@@ -100,20 +104,18 @@ class Funnel(models.Model):
 step_choices = models.Q(app_label='squeezemail', model='decision') |\
         models.Q(app_label='squeezemail', model='delay') |\
         models.Q(app_label='squeezemail', model='drip') |\
-        models.Q(app_label='squeezemail', model='modify')
+        models.Q(app_label='squeezemail', model='modify') |\
+        models.Q(app_label='squeezemail', model='emailactivity')
 
 
-class Step(CTENode):
+class Step(MPTTModel):
+    parent = TreeForeignKey('self', null=True, blank=True, related_name='children', db_index=True)
     description = models.CharField(max_length=75, null=True, blank=True)
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, limit_choices_to=step_choices, null=True, blank=True)
     object_id = GfkLookupField('content_type', null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
     is_active = models.BooleanField(verbose_name="Active", default=True, help_text="If not active, subscribers will still be allowed to move to this step, but this step won't run until it's active. Consider this a good way to 'hold' subscribers on this step. Note: Step children will still run.")
-    position = models.PositiveIntegerField(db_index=True, editable=False, default=0)
-
-    _cte_node_path = 'cte_path'
-    _cte_node_order_by = ('position',)
-    _cte_node_ordering = 'ordering'
+    # position = models.PositiveIntegerField(db_index=True, editable=False, default=0)
 
     def __str__(self):
         return "%s" % self.description if self.description else str(self.content_object)
@@ -144,8 +146,8 @@ class Step(CTENode):
             logger.debug('Step %i is already running', self.id)
 
     def get_next_step(self):
-        next_step_exists = self.children.exists()
-        return self.children.all()[0] if next_step_exists else None  # Only get 1 child.
+        next_step_exists = self.get_children().exists()
+        return self.get_children()[0] if next_step_exists else None  # Only get 1 child.
 
     def get_active_subscribers_count(self):
         return self.subscribers.filter(is_active=True).count()
@@ -189,14 +191,32 @@ class Modify(models.Model):
         return qs
 
     def clean(self):
+        """
+        Make sure the chosen content_object has the proper runnable method name on it.
+        You could 'add' or 'remove' a tag, but you can't 'move' a tag because it doesn't make sense.
+        """
         try:
             getattr(self.content_object, self.get_method_name())
         except Exception as e:
             raise ValidationError(
                 '%s does not have method name %s: %s' % (type(e).__name__, self.get_method_name(), e))
 
+    def __str__(self):
+        return '%s %s "%s" ' % (self.modify_type,  self.content_type, self.content_object)
 
-#TODO: Add Tag model
+
+class Tag(models.Model):
+    name = models.CharField(unique=True, max_length=100)
+    slug = models.SlugField(unique=True, max_length=100)
+
+    def step_add(self, subscriber):
+        return self.subscribers.add(subscriber)
+
+    def step_remove(self, subscriber):
+        return self.subscribers.remove(subscriber)
+
+    def __str__(self):
+        return self.name
 
 
 class Delay(models.Model):
@@ -281,7 +301,7 @@ class EmailActivity(models.Model):
     type = models.CharField(max_length=75, choices=TYPE_CHOICES)
     check_last = models.IntegerField(help_text="How many previously sent drips/emails to check", default=1)
     on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_true+')
-    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_true+')
+    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_false+')
 
     def step_run(self, step, qs):
         subscriber_id_list = qs.values_list('id', flat=True)
@@ -295,7 +315,7 @@ class EmailActivity(models.Model):
 
         if self.type is 'open':
             # Get the last check_last Opens from the subscriber list
-            opened_senddrip_id_list = Open.objects.filter(drip_id__in=last_send_drip_id_list).values_list('sentdrip_id', flat=True)
+            opened_senddrip_id_list = Open.objects.filter(drip_id__in=last_send_drip_id_list).values_list('senddrip_id', flat=True)
             qs_true = qs.filter(send_drips__id=opened_senddrip_id_list)
             true_ids = qs_true.values_list('id', flat=True)
 
@@ -455,7 +475,7 @@ class SendDrip(models.Model):
     Keeps a record of all sent drips.
     Has OneToOne relations for open, click, spam, unsubscribe. Calling self.opened will return a boolean.
     If it exists, it returns True, and you can assume it has been opened.
-    This is done this way to save database space, since the majority of sentdrips won't even be opened, and to add extra
+    This is done this way to save database space, since the majority of senddrips won't even be opened, and to add extra
     data (such as timestamps) to filter off, so you could see your open rate for a drip within the past 24 hours.
     """
     date = models.DateTimeField(auto_now_add=True)
@@ -707,6 +727,7 @@ class Subscriber(models.Model):
     created = models.DateTimeField(default=timezone.now)
     step = models.ForeignKey('squeezemail.Step', related_name="subscribers", blank=True, null=True)
     step_timestamp = models.DateTimeField(verbose_name="Last Step Activity Timestamp", blank=True, null=True)
+    tags = models.ManyToManyField('Tag', related_name='subscribers', null=True, blank=True)
 
     objects = subscriber_manager
     default_manager = subscriber_manager
@@ -756,8 +777,6 @@ class Subscriber(models.Model):
         return subscriber
 
 
-
-
 class FunnelSubscription(models.Model):
     """
     Used to check if the Subscriber has been through a funnel already.
@@ -789,5 +808,5 @@ class RichText(plugins.RichText, DripPlugin):
     pass
 
 
-class Image(plugins.Image, DripPlugin):
-    url = models.TextField(max_length=500, null=True, blank=True)
+# class Image(plugins.Image, DripPlugin):
+#     url = models.TextField(max_length=500, null=True, blank=True)
