@@ -1,14 +1,16 @@
 import functools
 import operator
 import logging
-# from collections import OrderedDict
+
+from content_editor.contents import contents_for_item, contents_for_items
+from content_editor.renderer import PluginRenderer
+
+
 try:
     from _md5 import md5  # Python 3
 except ImportError:
     from hashlib import md5  # Python 2
 
-# from cte_forest.models import CTENode
-# from cte_forest.fields import DepthField, PathField, OrderingField
 from django.db.models import Q
 from gfklookupwidget.fields import GfkLookupField
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
@@ -33,7 +35,6 @@ from squeezemail import SQUEEZE_PREFIX
 from squeezemail import plugins
 from squeezemail.utils import class_for, get_token_for_email
 
-# from mptt.models import MPTTModel, TreeForeignKey
 from content_editor.models import (
     Region, create_plugin_base
 )
@@ -59,15 +60,16 @@ LOOKUP_TYPES = (
     ('contains', 'contains'),
     ('icontains', 'contains (case insensitive)'),
     ('regex', 'regex'),
-    ('iregex', 'contains (case insensitive)'),
+    ('iregex', 'regex (case insensitive)'),
     ('gt', 'greater than'),
     ('gte', 'greater than or equal to'),
     ('lt', 'less than'),
     ('lte', 'less than or equal to'),
     ('startswith', 'starts with'),
-    ('endswith', 'starts with'),
-    ('istartswith', 'ends with (case insensitive)'),
+    ('endswith', 'ends with'),
+    ('istartswith', 'starts with (case insensitive)'),
     ('iendswith', 'ends with (case insensitive)'),
+    ('isnull', 'isnull (boolean)'),
 )
 
 
@@ -83,6 +85,9 @@ class Funnel(models.Model):
         """
         Add/create a subscriber to go down this funnel path.
         Won't go down the path if the subscriber has already been on it unless ignore_previous_history is True.
+        If the subscriber has already been down the path and you do force them down it again, they won't receive the
+        same drips unless you clear their senddrip history. They will continue to move down it, though, even without
+        drips being sent to them.
         """
         created = False
         if isinstance(subscriber, Subscriber):
@@ -98,27 +103,54 @@ class Funnel(models.Model):
     def get_subscription_count(self):
         return self.subscriptions.count()
 
+    def step_add(self, subscriber):
+        return self.create_subscription(subscriber=subscriber)
+
     get_subscription_count.short_description = "Subscriptions"
 
 
-step_choices = models.Q(app_label='squeezemail', model='decision') |\
-        models.Q(app_label='squeezemail', model='delay') |\
-        models.Q(app_label='squeezemail', model='drip') |\
-        models.Q(app_label='squeezemail', model='modify') |\
-        models.Q(app_label='squeezemail', model='emailactivity')
+# step_choices = models.Q(app_label='squeezemail', model='decision') |\
+#         models.Q(app_label='squeezemail', model='delay') |\
+#         models.Q(app_label='squeezemail', model='drip') |\
+#         models.Q(app_label='squeezemail', model='modify') |\
+#         models.Q(app_label='squeezemail', model='emailactivity')
 
 
 class Step(MPTTModel):
     parent = TreeForeignKey('self', null=True, blank=True, related_name='children', db_index=True)
     description = models.CharField(max_length=75, null=True, blank=True)
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, limit_choices_to=step_choices, null=True, blank=True)
-    object_id = GfkLookupField('content_type', null=True, blank=True)
-    content_object = GenericForeignKey('content_type', 'object_id')
     is_active = models.BooleanField(verbose_name="Active", default=True, help_text="If not active, subscribers will still be allowed to move to this step, but this step won't run until it's active. Consider this a good way to 'hold' subscribers on this step. Note: Step children will still run.")
-    # position = models.PositiveIntegerField(db_index=True, editable=False, default=0)
+    delay = models.DurationField(default=timezone.timedelta(days=1), help_text="How long should the subscriber sit on this step before it runs for them? The preferred format for durations in Django is '%d %H:%M:%S.%f (e.g. 3 00:40:00 for 3 day, 40 minute delay)'")
+    # resume_on_days = models.IntegerField(max_length=7, default=1111111) TODO: add ability to only run on specific days of the week
+    on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_true+', help_text="If the subscriber makes it through <b>all</b> of the actions, you can optionally direct them to a specific step. This is useful if using a 'Queryset Rule' or 'Email Activity' action and you want to send any filtered/true users to a specific step. If nothing is specified here, any truthy subscribers will just move to this step's first child (if relevant).")
+    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_false+', help_text="Useful if you use any type of action that removes subscribers from the original queryset (e.g. a 'Queryset Rule'). If nothing is specified here, any excluded subscribers will just move to this step's first child (if relevant).")
+    processed = models.IntegerField(default=0)
+
+    regions = [
+        Region(key='actions', title='Actions'),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super(Step, self).__init__(*args, **kwargs)
+        self.starting_subscribers = None
+        self.completed_subscribers = None
 
     def __str__(self):
-        return "%s" % self.description if self.description else str(self.content_object)
+        if self.description:
+            return "%s - (delay for %s)" % (self.description, self.delay)
+        # contents = contents_for_items(self, plugins=[ActionDrip])
+        return "%s - (delay for %s)" % (str(self.pk), self.delay)
+
+    def get_subscribers(self):
+        if self.completed_subscribers is not None:
+            return self.completed_subscribers
+        # get all subscribers currently on this step who are active
+        # and have been sitting on this step longer than the step duration
+        goal_time = timezone.now() - self.delay
+        qs = self.subscribers.filter(is_active=True).filter(step_timestamp__lte=goal_time)
+        self.starting_subscribers = qs  # the original subscribers before the action(s) began
+        self.completed_subscribers = qs  # we'll be possibly plucking subscribers out of this qs as the actions go
+        return qs
 
     @cached_property
     def lock_id(self):
@@ -135,15 +167,46 @@ class Step(MPTTModel):
         return cache.delete(self.lock_id)
 
     def run(self):
-        if self.acquire_lock():
-            # get all subscribers currently on this step who are active
-            qs = self.subscribers.filter(is_active=True)
-            # do what this step needs to do (e.g. decision)
-            ret = self.content_object.step_run(self, qs)
-            self.release_lock()
-            return ret
-        else:
-            logger.debug('Step %i is already running', self.id)
+        # if self.acquire_lock():  # lock this step so it can't run while it's already running
+            # do what this step needs to do to the subscribers (tag, send a drip, etc.)
+            count = 0
+            if self.get_subscribers().exists():
+                action_list = contents_for_item(self, plugins=[ActionDrip, ActionModification, QuerySetRule])
+                for action in action_list:
+                    if self.get_subscribers().exists():  # so we don't continue running actions on an empty qs
+                        print("running action %s" % str(action))
+                        # runs actions, in order, on subscriber queryset. Possibly removing subscribers for relevant actions.
+                        self.completed_subscribers = action.step_run(self, self.get_subscribers())
+
+                true_ids = self.completed_subscribers.values_list('id', flat=True)
+                qs_false = self.starting_subscribers.exclude(id__in=true_ids)
+                next_step = self.get_next_step()
+                if self.on_true_id:
+                    for subscriber in self.completed_subscribers:
+                        subscriber.move_to_step(self.on_true_id)
+                        count += 1
+                else:  # If there's no specified step to move to on true, move to the next step if there is one
+                    if next_step:
+                        for subscriber in self.completed_subscribers:
+                            subscriber.move_to_step(next_step.id)
+                            count += 1
+
+                if self.on_false_id:
+                    for subscriber in qs_false:
+                        subscriber.move_to_step(self.on_false_id)
+                        count += 1
+                else:  # If there's no specified step to move to on false, move to the next step if there is one
+                    if next_step:
+                        for subscriber in qs_false:
+                            subscriber.move_to_step(next_step.id)
+                            count += 1
+                if count > 0:
+                    self.processed += count
+                    self.save()
+            # self.release_lock()
+            return count
+        # else:
+        #     logger.warn('Step %i is already running', self.id)
 
     def get_next_step(self):
         next_step_exists = self.get_children().exists()
@@ -154,58 +217,42 @@ class Step(MPTTModel):
 
     get_active_subscribers_count.short_description = "Subscribers on Step"
 
-    #Modify method
+    #for modification method
     def step_move(self, subscriber):
         return subscriber.move_to_step(self.id)
 
+    # def apply_queryset_rules(self, qs):
+    #     """
+    #     First collect all filter/exclude kwargs and apply any annotations.
+    #     Then apply all filters at once, and all excludes at once.
+    #     """
+    #     clauses = {
+    #         'filter': [],
+    #         'exclude': []}
+    #
+    #     for rule in self.queryset_rules.all():
+    #
+    #         clause = clauses.get(rule.method_type, clauses['filter'])
+    #
+    #         kwargs = rule.filter_kwargs(qs)
+    #         clause.append(Q(**kwargs))
+    #
+    #         qs = rule.apply_any_annotation(qs)
+    #
+    #     if clauses['exclude']:
+    #         qs = qs.exclude(functools.reduce(operator.or_, clauses['exclude']))
+    #     qs = qs.filter(*clauses['filter'])
+    #     return qs
 
-class Modify(models.Model):
-    """
-    Attempts to run the specified method of a class in the form of
-    step_choice (e.g. step_remove), and passes the subscriber to it.
-    Useful for adding/removing a tag,
-    """
-    MODIFY_CHOICES = (
-        ('add', 'Add'),
-        ('move', 'Move'),
-        ('remove', 'Remove'),
-    )
-    modify_type = models.CharField(max_length=75, choices=MODIFY_CHOICES)
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = GfkLookupField('content_type')
-    content_object = GenericForeignKey('content_type', 'object_id')
 
-    class Meta:
-        verbose_name = 'Modify'
-        verbose_name_plural = 'Modifications'
-
-    def get_method_name(self):
-        # Get the method name to run on the content_object (e.g. 'step_add')
-        return 'step_%s' % self.modify_type
-
-    def step_run(self, step, qs):
-        method_name = self.get_method_name()
-        content_object = self.content_object
-        for subscriber in qs:
-            method_call = getattr(content_object, method_name)(subscriber=subscriber)
-        return qs
-
-    def clean(self):
-        """
-        Make sure the chosen content_object has the proper runnable method name on it.
-        You could 'add' or 'remove' a tag, but you can't 'move' a tag because it doesn't make sense.
-        """
-        try:
-            getattr(self.content_object, self.get_method_name())
-        except Exception as e:
-            raise ValidationError(
-                '%s does not have method name %s: %s' % (type(e).__name__, self.get_method_name(), e))
-
-    def __str__(self):
-        return '%s %s "%s" ' % (self.modify_type,  self.content_type, self.content_object)
+StepPlugin = create_plugin_base(Step)
 
 
 class Tag(models.Model):
+    """
+    Can Add/Remove a subscriber tag with a Modification action.
+    Filter/Exclude off of a tag with a Queryset Rule.
+    """
     name = models.CharField(unique=True, max_length=100)
     slug = models.SlugField(unique=True, max_length=100)
 
@@ -218,116 +265,58 @@ class Tag(models.Model):
     def __str__(self):
         return self.name
 
-
-class Delay(models.Model):
-    duration = models.DurationField(default=timezone.timedelta(days=1), help_text="The preferred format for durations in Django is '%d %H:%M:%S.%f (e.g. 3 00:40:00 for 3 day, 40 minute delay)'")
-    # resume_on_days = models.IntegerField(max_length=7, default=1111111)
-
-    def __str__(self):
-        return "Delay: %s" % self.duration
-
-    def step_run(self, step, qs):
-        next_step = step.get_next_step()
-        now = timezone.now()
-        for subscriber in qs:
-            if next_step:
-                # goal_time = subscriber.step_timestamp + djangotimedelta.parse(self.delay)
-                goal_time = subscriber.step_timestamp + self.duration
-                # if goal time is greater than or equal to now, move on to the next step
-                if goal_time <= now:
-                    subscriber.move_to_step(next_step.id)
-        return qs
-
-
-class Decision(models.Model):
-    description = models.CharField(max_length=75, null=True, blank=True)
-    on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_true+')
-    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_false+')
-
-    queryset_rules = GenericRelation(
-        'squeezemail.QuerySetRule',
-        content_type_field='content_type_id',
-        object_id_field='object_id',
-    )
-
-    def __str__(self):
-        return "Decision: %s" % self.description
-
-    def apply_queryset_rules(self, qs):
-        """
-        First collect all filter/exclude kwargs and apply any annotations.
-        Then apply all filters at once, and all excludes at once.
-        """
-        clauses = {
-            'filter': [],
-            'exclude': []}
-
-        for rule in self.queryset_rules.all():
-
-            clause = clauses.get(rule.method_type, clauses['filter'])
-
-            kwargs = rule.filter_kwargs(qs)
-            clause.append(Q(**kwargs))
-
-            qs = rule.apply_any_annotation(qs)
-
-        if clauses['exclude']:
-            qs = qs.exclude(functools.reduce(operator.or_, clauses['exclude']))
-        qs = qs.filter(*clauses['filter'])
-        return qs
-
-    def step_run(self, step, qs):
-
-        qs_true = self.apply_queryset_rules(qs).distinct()
-
-        true_ids = qs_true.values_list('id', flat=True)
-        qs_false = qs.exclude(id__in=true_ids)
-        if self.on_true_id:
-            for subscriber in qs_true:
-                subscriber.move_to_step(self.on_true_id)
-
-        if self.on_false_id:
-            for subscriber in qs_false:
-                subscriber.move_to_step(self.on_false_id)
-        return qs
-
-
-class EmailActivity(models.Model):
-    TYPE_CHOICES = (
-        ('open', 'Opened'),
-        ('click', 'Clicked'),
-        ('spam', 'Reported Spam'),
-    )
-    type = models.CharField(max_length=75, choices=TYPE_CHOICES)
-    check_last = models.IntegerField(help_text="How many previously sent drips/emails to check", default=1)
-    on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_true+')
-    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_false+')
-
-    def step_run(self, step, qs):
-        subscriber_id_list = qs.values_list('id', flat=True)
-        qs_true = False
-        qs_false = False
-        true_ids = []
-
-        # Get all of the last SendDrips that our subscribers have been sent
-        last_send_drip_id_list = SendDrip.objects.filter(subscriber_id__in=subscriber_id_list, sent=True)\
-            .order_by('-date')[:self.check_last].values_list('id', flat=True)
-
-        if self.type is 'open':
-            # Get the last check_last Opens from the subscriber list
-            opened_senddrip_id_list = Open.objects.filter(drip_id__in=last_send_drip_id_list).values_list('senddrip_id', flat=True)
-            qs_true = qs.filter(send_drips__id=opened_senddrip_id_list)
-            true_ids = qs_true.values_list('id', flat=True)
-
-        if self.on_true_id:
-            for subscriber in qs_true:
-                subscriber.move_to_step(self.on_true_id)
-
-        if self.on_false_id:
-            qs_false = qs.exclude(id__in=true_ids)
-            for subscriber in qs_false:
-                subscriber.move_to_step(self.on_false_id)
-        return qs
+#
+# class Decision(models.Model):
+#     description = models.CharField(max_length=75, null=True, blank=True)
+#     on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_true+')
+#     on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_decision_on_false+')
+#
+#     queryset_rules = GenericRelation(
+#         'squeezemail.QuerySetRule',
+#         content_type_field='content_type_id',
+#         object_id_field='object_id',
+#     )
+#
+#     def __str__(self):
+#         return "Decision: %s" % self.description
+#
+#     def apply_queryset_rules(self, qs):
+#         """
+#         First collect all filter/exclude kwargs and apply any annotations.
+#         Then apply all filters at once, and all excludes at once.
+#         """
+#         clauses = {
+#             'filter': [],
+#             'exclude': []}
+#
+#         for rule in self.queryset_rules.all():
+#
+#             clause = clauses.get(rule.method_type, clauses['filter'])
+#
+#             kwargs = rule.filter_kwargs(qs)
+#             clause.append(Q(**kwargs))
+#
+#             qs = rule.apply_any_annotation(qs)
+#
+#         if clauses['exclude']:
+#             qs = qs.exclude(functools.reduce(operator.or_, clauses['exclude']))
+#         qs = qs.filter(*clauses['filter'])
+#         return qs
+#
+#     def step_run(self, calling_step, subscriber_qs):
+#
+#         qs_true = self.apply_queryset_rules(subscriber_qs).distinct()
+#
+#         true_ids = qs_true.values_list('id', flat=True)
+#         qs_false = subscriber_qs.exclude(id__in=true_ids)
+#         if self.on_true_id:
+#             for subscriber in qs_true:
+#                 subscriber.move_to_step(self.on_true_id)
+#
+#         if self.on_false_id:
+#             for subscriber in qs_false:
+#                 subscriber.move_to_step(self.on_false_id)
+#         return subscriber_qs
 
 
 class DripSubject(models.Model):
@@ -371,8 +360,8 @@ class Drip(models.Model):
     from_email_name = models.CharField(max_length=150, null=True, blank=True,
         help_text="Set a name for a custom from email.")
     message_class = models.CharField(max_length=120, blank=True, default='default')
-    send_after = models.DateTimeField(blank=True, null=True, help_text="Only used for 'Broadcast' type emails. (not yet implemented)")
-    broadcast_sent = models.BooleanField(default=False, help_text="Only used for 'Broadcast' type emails.")
+    # send_after = models.DateTimeField(blank=True, null=True, help_text="Only used for 'Broadcast' type emails. (not yet implemented)")
+    # broadcast_sent = models.BooleanField(default=False, help_text="Only used for 'Broadcast' type emails.")
     date = models.DateTimeField(auto_now_add=True)
     lastchanged = models.DateTimeField(auto_now=True)
 
@@ -406,23 +395,20 @@ class Drip(models.Model):
     def get_split_test_body(self):
         pass
 
-    def step_run(self, step, qs):
-        not_received, have_received = self.split_received(qs)
-        self.handler(step=step, queryset=not_received).step_run()
-        next_step = step.get_next_step()
-        if next_step:
-            for subscriber in have_received:
-                subscriber.move_to_step(next_step.id)
-        return qs
+    def step_run(self, calling_step, subscriber_qs):
+        # If all of the subscribers have received the drip already, we don't want to send an empty queryset
+        # not_received, have_received = self.split_received(subscriber_qs)
+        successfully_sent_subscriber_qs = self.handler(step=calling_step, queryset=subscriber_qs).step_run(calling_step, subscriber_qs)
+        return successfully_sent_subscriber_qs
 
-    def split_received(self, queryset):
-        # Exclude all subscribers who have a SendDrip already
-        target_subscriber_ids = queryset.values_list('id', flat=True)
-        have_received_ids = SendDrip.objects.filter(drip_id=self.id, subscriber_id__in=target_subscriber_ids)\
-            .values_list('subscriber_id', flat=True)
-        not_received = queryset.exclude(id__in=have_received_ids)
-        have_received = queryset.filter(id__in=have_received_ids)
-        return not_received, have_received
+    # def split_received(self, queryset):
+    #     # Exclude all subscribers who have a SendDrip already
+    #     target_subscriber_ids = queryset.values_list('id', flat=True)
+    #     have_received_ids = SendDrip.objects.filter(drip_id=self.id, subscriber_id__in=target_subscriber_ids)\
+    #         .values_list('subscriber_id', flat=True)
+    #     not_received = queryset.exclude(id__in=have_received_ids)
+    #     have_received = queryset.filter(id__in=have_received_ids)
+    #     return not_received, have_received
 
     def apply_queryset_rules(self, qs):
         """
@@ -523,19 +509,24 @@ class Unsubscribe(models.Model):
     date = models.DateTimeField(auto_now_add=True)
 
 
-class QuerySetRule(models.Model):
+class QuerySetRule(StepPlugin):
+    drip = models.ForeignKey('Drip', null=True, blank=True)
     date = models.DateTimeField(auto_now_add=True)
     lastchanged = models.DateTimeField(auto_now=True)
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = GfkLookupField('content_type')
-    content_object = GenericForeignKey('content_type', 'object_id')
+    # content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    # object_id = GfkLookupField('content_type')
+    # content_object = GenericForeignKey('content_type', 'object_id')
     method_type = models.CharField(max_length=12, default='filter', choices=METHOD_TYPES)
-    field_name = models.CharField(max_length=128, verbose_name='Field name of Subscription')
+    field_name = models.CharField(max_length=128, verbose_name='Field name of Subscriber')
     lookup_type = models.CharField(max_length=12, default='exact', choices=LOOKUP_TYPES)
 
     field_value = models.CharField(max_length=255,
         help_text=('Can be anything from a number, to a string. Or, do ' +
                    '`now-7 days` or `today+3 days` for fancy timedelta.'))
+
+    def step_run(self, calling_step, subscriber_qs):
+        # assert False, self.apply(subscriber_qs)
+        return self.apply(subscriber_qs)
 
     def clean(self):
         try:
@@ -684,8 +675,6 @@ class QuerySetRule(models.Model):
 #         ordering = ('order', 'id')
 
 
-class FunnelManager(models.Manager):
-    pass
 
 
 class SubscriberManager(models.Manager):
@@ -728,6 +717,7 @@ class Subscriber(models.Model):
     step = models.ForeignKey('squeezemail.Step', related_name="subscribers", blank=True, null=True)
     step_timestamp = models.DateTimeField(verbose_name="Last Step Activity Timestamp", blank=True, null=True)
     tags = models.ManyToManyField('Tag', related_name='subscribers', null=True, blank=True)
+    idle = models.BooleanField(default=False)
 
     objects = subscriber_manager
     default_manager = subscriber_manager
@@ -770,7 +760,7 @@ class Subscriber(models.Model):
     def step_remove(self, subscriber):
         """
         Used by a 'Modify' step. it'll call this and pass in the subscriber.
-        It may feel stupid since we're not using self.is_active
+        It may feel weird since we're not using self.is_active, but that's on purpose.
         """
         subscriber.is_active = False
         subscriber.save()
@@ -784,9 +774,6 @@ class FunnelSubscription(models.Model):
     funnel = models.ForeignKey('squeezemail.Funnel', related_name='subscriptions')
     subscriber = models.ForeignKey('squeezemail.Subscriber', related_name="funnel_subscriptions")
     date = models.DateTimeField(default=timezone.now)
-
-    default_manager = FunnelManager()
-    objects = default_manager
 
     class Meta:
         unique_together = ('funnel', 'subscriber')
@@ -810,3 +797,103 @@ class RichText(plugins.RichText, DripPlugin):
 
 # class Image(plugins.Image, DripPlugin):
 #     url = models.TextField(max_length=500, null=True, blank=True)
+
+
+class ActionDrip(StepPlugin):
+    drip = models.ForeignKey('squeezemail.Drip', related_name='actions+')
+
+    class Meta:
+        verbose_name = 'Send A Drip'
+
+    def step_run(self, calling_step, subscriber_qs):
+        return self.drip.step_run(calling_step, subscriber_qs)
+
+    def __str__(self):
+        return self.drip.name
+
+
+class ActionModification(StepPlugin):
+    """
+    Attempts to run the specified method of a class in the form of
+    step_*choice* (e.g. step_remove), and passes the subscriber to it.
+    Useful for adding/removing a tag,
+    """
+    MODIFY_CHOICES = (
+        ('add', 'Add'),
+        ('move', 'Move'),
+        ('remove', 'Remove'),
+    )
+    modify_type = models.CharField(max_length=75, choices=MODIFY_CHOICES)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = GfkLookupField('content_type')
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    class Meta:
+        verbose_name = 'Subscriber Modification'
+        verbose_name_plural = 'Subscriber Modifications'
+
+    def get_method_name(self):
+        # Get the method name to run on the content_object (e.g. 'step_add')
+        return 'step_%s' % self.modify_type
+
+    def step_run(self, calling_step, subscriber_qs):
+        method_name = self.get_method_name()
+        content_object = self.content_object
+        for subscriber in subscriber_qs:
+            call_method = getattr(content_object, method_name)(subscriber=subscriber)
+        return subscriber_qs
+
+    def clean(self):
+        """
+        Make sure the chosen content_object has the proper runnable method name on it.
+        You could 'add' or 'remove' a tag, but you can't 'move' a tag because it doesn't make sense.
+        """
+        try:
+            getattr(self.content_object, self.get_method_name())
+        except Exception as e:
+            raise ValidationError(
+                '%s does not have method name %s: %s' % (type(e).__name__, self.get_method_name(), e))
+
+    def __str__(self):
+        return '%s %s "%s" ' % (self.modify_type, self.content_type, self.content_object)
+
+
+class EmailActivity(models.Model):
+    TYPE_CHOICES = (
+        ('open', 'Opened'),
+        ('click', 'Clicked'),
+        ('spam', 'Reported Spam'),
+        ('unsubscribe', 'Unsubscribed'),
+        ('sent', 'Was Sent'),
+    )
+    type = models.CharField(max_length=75, choices=TYPE_CHOICES)
+    drip = models.ForeignKey('squeezemail.Drip', related_name='email_activity+')
+    # check_last = models.IntegerField(help_text="How many previously sent drips/emails to check", default=1)
+    on_true = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_true+')
+    on_false = models.ForeignKey('squeezemail.Step', null=True, blank=True, related_name='step_email_activity_on_false+')
+
+    def step_run(self, calling_step, subscriber_qs):
+        subscriber_id_list = subscriber_qs.values_list('id', flat=True)
+        qs_true = False
+        qs_false = False
+        true_ids = []
+
+        # Get all of the last SendDrips that our subscribers have been sent
+        # last_send_drip_id_list = SendDrip.objects.filter(subscriber_id__in=subscriber_id_list, sent=True)\
+        #     .order_by('-date')[:self.check_last].values_list('id', flat=True)
+
+        # if self.type is 'open':
+        #     # Get the last check_last Opens from the subscriber list
+        #     opened_senddrip_id_list = Open.objects.filter(drip_id__in=last_send_drip_id_list).values_list('senddrip_id', flat=True)
+        #     qs_true = subscriber_qs.filter(send_drips__id=opened_senddrip_id_list)
+        #     true_ids = qs_true.values_list('id', flat=True)
+        #
+        # if self.on_true_id:
+        #     for subscriber in qs_true:
+        #         subscriber.move_to_step(self.on_true_id)
+        #
+        # if self.on_false_id:
+        #     qs_false = qs.exclude(id__in=true_ids)
+        #     for subscriber in qs_false:
+        #         subscriber.move_to_step(self.on_false_id)
+        return subscriber_qs

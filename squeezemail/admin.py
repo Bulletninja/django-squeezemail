@@ -1,16 +1,15 @@
 import json
 
-import html2text
 from django import forms
 from django.template import Context
 from django.contrib.contenttypes.admin import GenericTabularInline
 from django.contrib import admin
 from mptt.admin import DraggableMPTTAdmin
-# from feincms3.admin import TreeAdmin
-# from feincms3.plugins import AlwaysChangedModelForm
 
-from .models import Drip, SendDrip, QuerySetRule, DripSubject, Subscriber, Decision,\
-    Delay, Step, Modify, Funnel, RichText, Tag
+# from squeezemail.actions.drip.models import ActionDrip
+# from squeezemail.actions.modification.models import ActionModification
+from .models import Drip, SendDrip, QuerySetRule, DripSubject, Subscriber,\
+    Step, Funnel, RichText, Tag, ActionDrip, ActionModification
 from .handlers import configured_message_classes, message_class_for
 
 from content_editor.admin import (
@@ -18,7 +17,19 @@ from content_editor.admin import (
 )
 
 
-class QuerySetRuleInline(GenericTabularInline):
+# class QuerySetRuleInline(GenericTabularInline):
+#     model = QuerySetRule
+#
+#     def _media(self):
+#         return forms.Media(
+#             css={
+#                 'all': ('css/queryset_rules.css',)
+#             },
+#         )
+#     media = property(_media)
+
+
+class ActionQuerySetRuleInline(ContentEditorInline):
     model = QuerySetRule
 
     def _media(self):
@@ -30,18 +41,27 @@ class QuerySetRuleInline(GenericTabularInline):
     media = property(_media)
 
 
-class StepAdmin(DraggableMPTTAdmin):
+class ActionDripInline(ContentEditorInline):
+    model = ActionDrip
+
+
+class ActionModificationInline(ContentEditorInline):
+    model = ActionModification
+
+
+class StepAdmin(DraggableMPTTAdmin, ContentEditor):
     model = Step
     generic_raw_id_fields = ['content_object']
     # raw_id_fields = ('parent',)
     list_display = ('tree_actions', 'indented_title', 'get_active_subscribers_count')
     list_display_links = ('indented_title',)
 
-
-class DecisionAdmin(admin.ModelAdmin):
-    model = Decision
     inlines = [
-        QuerySetRuleInline,
+        ActionDripInline,
+        ActionModificationInline,
+        ActionQuerySetRuleInline,
+        # ActionDecisionInline,
+        # QuerySetRuleInline
     ]
 
     def build_extra_context(self, extra_context):
@@ -51,12 +71,33 @@ class DecisionAdmin(admin.ModelAdmin):
         return extra_context
 
     def add_view(self, request, form_url='', extra_context=None):
-        return super(DecisionAdmin, self).add_view(
+        return super(StepAdmin, self).add_view(
             request, extra_context=self.build_extra_context(extra_context))
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
-        return super(DecisionAdmin, self).change_view(
+        return super(StepAdmin, self).change_view(
             request, object_id, extra_context=self.build_extra_context(extra_context))
+
+
+# class DecisionAdmin(admin.ModelAdmin):
+#     model = Decision
+#     inlines = [
+#         QuerySetRuleInline,
+#     ]
+#
+#     def build_extra_context(self, extra_context):
+#         from .utils import get_simple_fields
+#         extra_context = extra_context or {}
+#         extra_context['field_data'] = json.dumps(get_simple_fields(Subscriber))
+#         return extra_context
+#
+#     def add_view(self, request, form_url='', extra_context=None):
+#         return super(DecisionAdmin, self).add_view(
+#             request, extra_context=self.build_extra_context(extra_context))
+#
+#     def change_view(self, request, object_id, form_url='', extra_context=None):
+#         return super(DecisionAdmin, self).change_view(
+#             request, object_id, extra_context=self.build_extra_context(extra_context))
 
 
 class FunnelAdmin(admin.ModelAdmin):
@@ -129,7 +170,7 @@ class DripAdmin(ContentEditor):
     # list_display = ('name', 'enabled', 'message_class')
     inlines = [
         DripSplitSubjectInline,
-        QuerySetRuleInline,
+        # QuerySetRuleInline,
         RichTextInline,
         # ImageInline
     ]
@@ -228,10 +269,10 @@ class SendDripAdmin(admin.ModelAdmin):
 admin.site.register(Drip, DripAdmin)
 admin.site.register(Subscriber, SubscriberAdmin)
 admin.site.register(Step, StepAdmin)
-admin.site.register(Modify)
-admin.site.register(Delay)
+# admin.site.register(Modify)
+# admin.site.register(Delay)
 admin.site.register(Tag)
-admin.site.register(Decision, DecisionAdmin)
+# admin.site.register(Decision, DecisionAdmin)
 admin.site.register(Funnel, FunnelAdmin)
 admin.site.register(SendDrip, SendDripAdmin)
 

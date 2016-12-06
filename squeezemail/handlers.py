@@ -243,11 +243,11 @@ class HandleDrip(object):
     """
     def __init__(self, *args, **kwargs):
         self.drip_model = kwargs.get('drip_model')
-        self._queryset = kwargs.get('queryset')
+        self._queryset = kwargs.get('queryset', None)
         self.step = kwargs.get('step', None)
 
     def get_queryset(self):
-        if not self._queryset:
+        if self._queryset is None:
             self._queryset = self.queryset()
         return self._queryset
 
@@ -263,11 +263,13 @@ class HandleDrip(object):
     def apply_queryset_rules(self):
         return
 
-    def step_run(self):
-        next_step = self.step.get_next_step()
-        self.prune()
-        count = self.send(next_step=next_step)
-        return count
+    def step_run(self, calling_step, subscriber_qs):
+        if subscriber_qs.exists():
+            self.prune()
+            successfully_sent_ids = self.send()
+            return self.get_queryset().filter(id__in=successfully_sent_ids)
+        else:
+            return subscriber_qs.none()
 
     def campaign_run(self):
         return
@@ -296,8 +298,7 @@ class HandleDrip(object):
         Returns count of created SendDrips.
         """
         MessageClass = message_class_for(self.drip_model.message_class)
-
-        count = 0
+        successfuly_ids = []
         for subscriber in self.get_queryset():
             message_instance = MessageClass(self.drip_model, subscriber)
             try:
@@ -319,11 +320,11 @@ class HandleDrip(object):
                         source='step',
                         split='main'
                     )
-                    count += 1
+                    successfuly_ids.append(subscriber.id)
             except Exception as e:
                 logging.error("Failed to send drip %s to subscriber %s: %s" % (str(self.drip_model.id), str(subscriber), e))
 
-        return count
+        return successfuly_ids
 
     def create_unsent_drips(self):
         """
