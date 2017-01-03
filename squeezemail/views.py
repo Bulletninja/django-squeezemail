@@ -45,7 +45,7 @@ def drip_open(request):
 
 def link_click(request):
     """
-    Decodes the link hash, makes sure their user_token matches ours, then process anything needed for stats, etc. then redirects to the link target
+    Decodes the link hash, makes sure their token matches ours, make a new celery task to process stats, redirect to the link target
     """
     orig_params = {}
     sq_params = {}

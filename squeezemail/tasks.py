@@ -32,7 +32,7 @@ def send_drip(self, subscriber_id_list, backend_kwargs=None, **kwargs):
     """
     Used to send drips to massive lists (100k+). Sending a broadcast uses this.
     """
-    next_step_id = kwargs.get('next_step_id', None)
+    # next_step_id = kwargs.get('next_step_id', None)
     drip_id = kwargs['drip_id']
     first_subscriber_id = subscriber_id_list[0]
 
@@ -92,7 +92,7 @@ def send_drip(self, subscriber_id_list, backend_kwargs=None, **kwargs):
                                 messages_sent += 1
                                 logger.debug("Successfully sent email message to subscriber %i.", subscriber.pk)
                                 # Move subscriber to next step only after their drip has been sent
-                                subscriber.move_to_step(next_step_id)
+                                # subscriber.move_to_step(next_step_id)
                                 process_sent.delay(
                                     user_id=subscriber.id,
                                     subject=message_instance.subject,

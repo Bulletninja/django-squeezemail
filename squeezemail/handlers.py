@@ -254,8 +254,9 @@ class HandleDrip(object):
     def queryset(self):
         """
         If there was no queryset passed in, our queryset is all active subscribers with our custom
-        queryset rules applied to it (if the drip has any).
+        queryset rules applied to it (if the drip has any). This is used for broadcast drips.
         """
+        assert False, "drip handler is making a brand new queryset"
         base_qs = Subscriber.objects.filter(is_active=True)
         qs = self.drip_model.apply_queryset_rules(base_qs).distinct()
         return qs
@@ -263,16 +264,16 @@ class HandleDrip(object):
     def apply_queryset_rules(self):
         return
 
-    def step_run(self, calling_step, subscriber_qs):
-        if subscriber_qs.exists():
+    def step_run(self, calling_step, subscription_qs):
+        if subscription_qs.exists():  # let's avoid running on an empty queryset
             self.prune()
-            successfully_sent_ids = self.send()
-            return self.get_queryset().filter(id__in=successfully_sent_ids)
+            # assert False, avoid_bug
+            successfully_sent_subscriber_ids = self.send()
+            # assert False, subscription_qs.filter(subscriber_id__in=successfully_sent_subscriber_ids)
+            assert False, subscription_qs.filter(subscriber_id__in=successfully_sent_subscriber_ids)
+            return subscription_qs.filter(subscriber_id__in=successfully_sent_subscriber_ids)
         else:
-            return subscriber_qs.none()
-
-    def campaign_run(self):
-        return
+            return subscription_qs  # hand back the empty qs it passed in
 
     def broadcast_run(self):
         self.create_unsent_drips()
@@ -291,14 +292,15 @@ class HandleDrip(object):
         self._queryset = self.get_queryset().exclude(id__in=exclude_subscriber_ids)
         return self._queryset
 
-    def send(self, next_step=None):
+    def send(self):
         """
         Send the message to each subscriber on the queryset.
         Create SendDrip for each subscriber that gets a message.
         Returns count of created SendDrips.
         """
         MessageClass = message_class_for(self.drip_model.message_class)
-        successfuly_ids = []
+        successfully_sent_ids = []
+
         for subscriber in self.get_queryset():
             message_instance = MessageClass(self.drip_model, subscriber)
             try:
@@ -308,9 +310,7 @@ class HandleDrip(object):
             except SendDrip.DoesNotExist:
                 result = message_instance.message.send()
                 if result:
-                    SendDrip.objects.create(drip=self.drip_model, subscriber=subscriber, sent=True)
-                    if next_step:
-                        subscriber.move_to_step(next_step.id)
+                    SendDrip.objects.create(drip_id=self.drip_model.id, subscriber_id=subscriber.id, sent=True)
                     # send a 'sent' event to google analytics
                     process_sent.delay(
                         user_id=subscriber.user_id,
@@ -320,11 +320,11 @@ class HandleDrip(object):
                         source='step',
                         split='main'
                     )
-                    successfuly_ids.append(subscriber.id)
+                    successfully_sent_ids.append(subscriber.id)
             except Exception as e:
-                logging.error("Failed to send drip %s to subscriber %s: %s" % (str(self.drip_model.id), str(subscriber), e))
+                logging.error("Failed to send drip %s to subscriber %s: %s" % (str(self.drip_model.id), str(subscriber.email), e))
 
-        return successfuly_ids
+        return successfully_sent_ids
 
     def create_unsent_drips(self):
         """

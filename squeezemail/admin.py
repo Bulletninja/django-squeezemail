@@ -9,7 +9,7 @@ from mptt.admin import DraggableMPTTAdmin
 # from squeezemail.actions.drip.models import ActionDrip
 # from squeezemail.actions.modification.models import ActionModification
 from .models import Drip, SendDrip, QuerySetRule, DripSubject, Subscriber,\
-    Step, Funnel, RichText, Tag, ActionDrip, ActionModification
+    Step, Funnel, RichText, Tag, ActionDrip, ActionModification, Subscription
 from .handlers import configured_message_classes, message_class_for
 
 from content_editor.admin import (
@@ -31,6 +31,7 @@ from content_editor.admin import (
 
 class ActionQuerySetRuleInline(ContentEditorInline):
     model = QuerySetRule
+    exclude = ('drip',)
 
     def _media(self):
         return forms.Media(
@@ -53,7 +54,7 @@ class StepAdmin(DraggableMPTTAdmin, ContentEditor):
     model = Step
     generic_raw_id_fields = ['content_object']
     # raw_id_fields = ('parent',)
-    list_display = ('tree_actions', 'indented_title', 'get_active_subscribers_count')
+    list_display = ('tree_actions', 'indented_title', 'get_active_subscription_count')
     list_display_links = ('indented_title',)
 
     inlines = [
@@ -104,6 +105,11 @@ class FunnelAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'get_subscription_count')
 
 
+class SubscriptionInline(admin.TabularInline):
+    model = Subscription
+    extra = 1
+
+
 class DripSplitSubjectInline(admin.TabularInline):
     model = DripSubject
     extra = 1
@@ -128,7 +134,7 @@ class DripForm(forms.ModelForm):
 
 
 class SubscriberAdmin(admin.ModelAdmin):
-    pass
+    inlines = [SubscriptionInline]
 
 
 class RichTextInline(ContentEditorInline):
@@ -147,6 +153,17 @@ class RichTextInline(ContentEditorInline):
 #     form = AlwaysChangedModelForm
 #     model = Image
 #     extra = 0
+class QuerySetRuleInline(admin.TabularInline):
+    model = QuerySetRule
+    exclude = ('parent', 'region', 'ordering',)
+
+    def _media(self):
+        return forms.Media(
+            css={
+                'all': ('css/queryset_rules.css',)
+            },
+        )
+    media = property(_media)
 
 
 class DripAdmin(ContentEditor):
@@ -170,10 +187,11 @@ class DripAdmin(ContentEditor):
     # list_display = ('name', 'enabled', 'message_class')
     inlines = [
         DripSplitSubjectInline,
-        # QuerySetRuleInline,
+        QuerySetRuleInline,
         RichTextInline,
         # ImageInline
     ]
+
     form = DripForm
 
     # raw_id_fields = ['parent']
