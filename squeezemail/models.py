@@ -382,7 +382,13 @@ class Drip(models.Model):
     from_email = models.EmailField(null=True, blank=True, help_text='Set a custom from email.')
     from_email_name = models.CharField(max_length=150, null=True, blank=True, help_text="Set a name for a custom from email.")
     message_class = models.CharField(max_length=120, blank=True, default='default')
-    # send_after = models.DateTimeField(blank=True, null=True, help_text="Only used for 'Broadcast' type emails. (not yet implemented)")
+    # send_after = models.DateTimeField(blank=True, null=True, help_text="Useful for Broadcast emails. "
+    #                                                                    "Note: If you use this for broadcast emails, "
+    #                                                                    "you must actually tell it to send out the "
+    #                                                                    "broadcast. It'll create SendDrip objects with "
+    #                                                                    "this selected date, and the celery worker will "
+    #                                                                    "only work on unsent SendDrip objects that have "
+    #                                                                    "dates in the past.")
     # broadcast_sent = models.BooleanField(default=False, help_text="Only used for 'Broadcast' type emails.")
     date = models.DateTimeField(auto_now_add=True)
     lastchanged = models.DateTimeField(auto_now=True)

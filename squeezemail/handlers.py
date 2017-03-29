@@ -256,7 +256,7 @@ class HandleDrip(object):
         If there was no queryset passed in, our queryset is all active subscribers with our custom
         queryset rules applied to it (if the drip has any). This is used for broadcast drips.
         """
-        assert False, "drip handler is making a brand new queryset"
+        # assert False, "drip handler is making a brand new queryset"
         base_qs = Subscriber.objects.filter(is_active=True)
         qs = self.drip_model.apply_queryset_rules(base_qs).distinct()
         return qs
