@@ -2,6 +2,7 @@ import sys
 import logging
 
 import html2text
+from django.utils import timezone
 from django.utils.safestring import mark_safe
 
 from google_analytics_reporter.tracking import Event
@@ -31,8 +32,8 @@ from content_editor.contents import contents_for_item
 from content_editor.renderer import PluginRenderer
 from .utils import get_token_for_email
 from . import SQUEEZE_CELERY_EMAIL_CHUNK_SIZE, SQUEEZE_DEFAULT_HTTP_PROTOCOL, SQUEEZE_DEFAULT_FROM_EMAIL
-from .tasks import send_drip, process_sent
-from .models import SendDrip, Subscriber, RichText
+from .tasks import send_email_message, process_sent
+from .models import SentEmailMessage, Subscriber, RichText
 from .utils import chunked
 
 
@@ -44,7 +45,7 @@ HREF_RE = re.compile(r'href\="((\{\{[^}]+\}\}|[^"><])+)"')
 def configured_message_classes():
     conf_dict = getattr(settings, 'SQUEEZE_DRIP_MESSAGE_CLASSES', {})
     if 'default' not in conf_dict:
-        conf_dict['default'] = 'squeezemail.handlers.DripMessage'
+        conf_dict['default'] = 'squeezemail.handlers.RenderEmailMessage'
     return conf_dict
 
 
@@ -56,10 +57,10 @@ def message_class_for(name):
     return klass
 
 
-class DripMessage(object):
+class RenderEmailMessage(object):
 
-    def __init__(self, drip, subscriber):
-        self.drip = drip
+    def __init__(self, email_message, subscriber):
+        self.email_message = email_message
         self.subscriber = subscriber
         self._context = None
         self._subject = None
@@ -70,21 +71,21 @@ class DripMessage(object):
 
     @cached_property
     def from_email(self):
-        if self.drip.from_email_name and self.drip.from_email:
-            from_ = "%s <%s>" % (self.drip.from_email_name, self.drip.from_email)
-        elif self.drip.from_email and not self.drip.from_email_name:
-            from_ = self.drip.from_email
+        if self.email_message.from_email_name and self.email_message.from_email:
+            from_ = "%s <%s>" % (self.email_message.from_email_name, self.email_message.from_email)
+        elif self.email_message.from_email and not self.email_message.from_email_name:
+            from_ = self.email_message.from_email
         else:
             from_ = SQUEEZE_DEFAULT_FROM_EMAIL
         return from_
 
     @property
     def from_email_name(self):
-        return self.drip.from_email_name
+        return self.email_message.from_email_name
 
     def render_body(self):
         # import the custom renderer and do renderer.plugins() instead
-        contents = contents_for_item(self.drip, plugins=[RichText])
+        contents = contents_for_item(self.email_message, plugins=[RichText])
         # assert False, contents['body']
         body = renderer.render(contents['body']) #TODO: get split test feincms content here
         return body
@@ -96,7 +97,7 @@ class DripMessage(object):
             context = Context({
                 'subscriber': self.subscriber,
                 'user': self.subscriber.user,
-                'drip': self.drip,
+                'email_message': self.email_message,
                 'token': token,
                 'tracking_pixel': self.tracking_pixel,
                 'unsubscribe_link': self.unsubscribe_link
@@ -107,7 +108,7 @@ class DripMessage(object):
 
     @cached_property
     def subject_model(self):
-        return self.drip.choose_split_test_subject
+        return self.email_message.choose_split_test_subject
 
     @property
     def subject(self):
@@ -196,7 +197,7 @@ class DripMessage(object):
         # Useful for tracking clicks and knowing who clicked it on which drip
         params = {
             'sq_subscriber_id': self.subscriber.id,
-            'sq_drip_id': self.drip.id,
+            'sq_email_message_id': self.email_message.id,
             'sq_token': self.get_email_token(),
             'sq_subject_id': self.subject_model.id
         }
@@ -234,7 +235,7 @@ class DripMessage(object):
         return mark_safe(urlunparse(l))
 
 
-class HandleDrip(object):
+class HandleEmailMessage(object):
     """
     A base object for defining a Drip.
     You can extend this manually and set it as your default drip
@@ -242,9 +243,9 @@ class HandleDrip(object):
     (e.g. SQUEEZE_DRIP_HANDLER = 'myapp.handlers.MyHandleDrip')
     """
     def __init__(self, *args, **kwargs):
-        self.drip_model = kwargs.get('drip_model')
+        self.email_message_model = kwargs.get('email_message_model')
         self._queryset = kwargs.get('queryset', None)
-        self.step = kwargs.get('step', None)
+        # self.step = kwargs.get('step', None)
 
     def get_queryset(self):
         if self._queryset is None:
@@ -258,11 +259,8 @@ class HandleDrip(object):
         """
         # assert False, "drip handler is making a brand new queryset"
         base_qs = Subscriber.objects.filter(is_active=True)
-        qs = self.drip_model.apply_queryset_rules(base_qs).distinct()
+        qs = self.email_message_model.apply_queryset_rules(base_qs).distinct()
         return qs
-
-    def apply_queryset_rules(self):
-        return
 
     def step_run(self, calling_step, subscription_qs):
         if subscription_qs.exists():  # let's avoid running on an empty queryset
@@ -276,17 +274,20 @@ class HandleDrip(object):
             return subscription_qs  # hand back the empty qs it passed in
 
     def broadcast_run(self):
-        self.create_unsent_drips()
-        results = self.create_tasks_for_unsent_drips()
-        return results
+        email_message = self.email_message_model
+        if email_message.enabled:
+            subscriber_id_list = self.prune().values_list('id', flat=True)
+            self.broadcast_send(email_message_id=email_message.id, subscriber_id_list=subscriber_id_list)
+            return self.email_message_model.disable()
+        return
 
     def prune(self):
         """
         Do an exclude for all Users who have a SendDrip already.
         """
         target_subscriber_ids = self.get_queryset().values_list('id', flat=True)
-        exclude_subscriber_ids = SendDrip.objects.filter(
-            drip_id=self.drip_model.id,
+        exclude_subscriber_ids = SentEmailMessage.objects.filter(
+            email_message_id=self.email_message_model.id,
             subscriber_id__in=target_subscriber_ids
         ).values_list('subscriber_id', flat=True)
         self._queryset = self.get_queryset().exclude(id__in=exclude_subscriber_ids)
@@ -298,59 +299,83 @@ class HandleDrip(object):
         Create SendDrip for each subscriber that gets a message.
         Returns count of created SendDrips.
         """
-        MessageClass = message_class_for(self.drip_model.message_class)
+        MessageClass = message_class_for(self.email_message_model.message_class)
         successfully_sent_ids = []
 
         for subscriber in self.get_queryset():
-            message_instance = MessageClass(self.drip_model, subscriber)
+            message_instance = MessageClass(self.email_message_model, subscriber)
             try:
                 # Make sure they haven't received this drip just before sending.
-                SendDrip.objects.get(drip_id=self.drip_model.id, subscriber_id=subscriber.id, sent=True)
+                SentEmailMessage.objects.get(email_message_id=self.email_message_model.id, subscriber_id=subscriber.id)
                 continue
-            except SendDrip.DoesNotExist:
+            except SentEmailMessage.DoesNotExist:
                 result = message_instance.message.send()
                 if result:
-                    SendDrip.objects.create(drip_id=self.drip_model.id, subscriber_id=subscriber.id, sent=True)
+                    SentEmailMessage.objects.create(email_message_id=self.email_message_model.id, subscriber_id=subscriber.id)
                     # send a 'sent' event to google analytics
                     process_sent.delay(
                         user_id=subscriber.user_id,
                         subject=message_instance.subject,
-                        drip_id=self.drip_model.id,
-                        drip_name=self.drip_model.name,
+                        email_message_id=self.email_message_model.id,
+                        email_message_name=self.email_message_model.name,
                         source='step',
                         split='main'
                     )
                     successfully_sent_ids.append(subscriber.id)
             except Exception as e:
-                logging.error("Failed to send drip %s to subscriber %s: %s" % (str(self.drip_model.id), str(subscriber.email), e))
+                logging.error("Failed to send email message %s to subscriber %s: %s" % (str(self.email_message_model.id), str(subscriber.email), e))
 
         return successfully_sent_ids
 
-    def create_unsent_drips(self):
-        """
-        Create an unsent SendDrip objects for every subscriber_id in the queryset.
-        Used for huge sendouts like broadcasts.
-        """
-        drip_id = self.drip_model.id
-        subscriber_id_list = self.get_queryset().values_list('id', flat=True)
+    # def create_unsent_drips(self):
+    #     """
+    #     Create an unsent SendDrip objects for every subscriber_id in the queryset.
+    #     Used for huge sendouts like broadcasts.
+    #     """
+    #     drip = self.drip_model
+    #     subscriber_id_list = self.get_queryset().values_list('id', flat=True)
+    #     # send_after = False
+    #     # if drip.send_after:
+    #     #     send_after = drip.send_after
+    #
+    #     for subscriber_id in subscriber_id_list:
+    #         try:
+    #             # if send_after:
+    #             #     sentdrip = SendDrip.objects.create(drip_id=drip.id, subscriber_id=subscriber_id, date=send_after, sent=False)
+    #             # else:
+    #             sentdrip = SendDrip.objects.create(drip_id=drip.id, subscriber_id=subscriber_id, sent=False)
+    #         except Exception as e:
+    #             logger.warning("Failed to create SendDrip for subscriber_id %i & drip_id %i. (%r)", subscriber_id, drip.id, e)
+    #     return
 
-        for subscriber_id in subscriber_id_list:
-            try:
-                sentdrip = SendDrip.objects.create(drip_id=drip_id, subscriber_id=subscriber_id, sent=False)
-            except Exception as e:
-                logger.warning("Failed to create SendDrip for subscriber_id %i & drip_id %i. (%r)", subscriber_id, drip_id, e)
-        return
+    # def create_tasks_for_broadcast(self, **kwargs):
+    #     """
+    #     Grab all of the SendDrips that haven't been sent yet, and queue up some celery tasks for them.
+    #     A cron job would be running this every so often to create new celery tasks.
+    #     """
+    #     result_tasks = []
+    #     kwargs['email_message_id'] = self.email_message_model.id
+    #     now = timezone.now()
+    #
+    #     #lock it
+    #
+    #
+    #     # Get a fresh list of all user IDs that haven't received this drip yet.
+    #     subscriber_id_list = SentEmailMessage.objects.filter(email_message_id=self.email_message_model.id).values_list('subscriber_id', flat=True)
+    #     chunk_size = SQUEEZE_CELERY_EMAIL_CHUNK_SIZE
+    #     for chunk in chunked(subscriber_id_list, chunk_size):
+    #         result_tasks.append(
+    #             send_email_message.delay(chunk, **kwargs)
+    #         )
+    #     logging.info('broadcast chunk(s) queued')
+    #     return result_tasks
 
-    def create_tasks_for_unsent_drips(self, **kwargs):
-        """
-        Grab all of the SendDrips that haven't been sent yet, and queue up some celery tasks for them.
-        """
-        result_tasks = []
-        kwargs['drip_id'] = self.drip_model.id
-        # Get a fresh list of all user IDs that haven't received this drip yet.
-        subscriber_id_list = SendDrip.objects.filter(drip_id=self.drip_model.id, sent=False).values_list('subscriber_id', flat=True)
+    def broadcast_send(self, email_message_id, subscriber_id_list, *args, **kwargs):
+        # result_tasks = []
+        # kwargs['email_message_id'] = email_message_id
+
         chunk_size = SQUEEZE_CELERY_EMAIL_CHUNK_SIZE
         for chunk in chunked(subscriber_id_list, chunk_size):
-            result_tasks.append(send_drip.delay(chunk, **kwargs))
-        logging.info('drips queued')
-        return result_tasks
+            send_email_message.delay(email_message_id, chunk, *args, **kwargs)
+        logging.info('Email message broadcast chunk(s) queued for sending')
+        return

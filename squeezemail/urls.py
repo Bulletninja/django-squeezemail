@@ -1,9 +1,10 @@
 from django.conf.urls import patterns, url
 
+from squeezemail.views import email_message_click, email_message_open, unsubscribe
+
 urlpatterns = [
-   url(r'^link/$', 'squeezemail.views.link_click', name='link'),
+   url(r'^link/$', email_message_click, name='link'),
    #url(r'^link/(?P<link_hash>[a-z0-9]+)/$', 'squeezemail.views.link_hash', name='link_hash'),
-   #url(r'^(?P<tracking_pixel>.*?).png', tracking_pixel, name="tracking_pixel"),
-   url(r'^pixel.png', 'squeezemail.views.drip_open', name="tracking_pixel"),
-   url(r'^unsubscribe/$', 'squeezemail.views.unsubscribe', name='unsubscribe'),
+   url(r'^pixel.png', email_message_open, name="tracking_pixel"),
+   url(r'^unsubscribe/$', unsubscribe, name='unsubscribe'),
 ]

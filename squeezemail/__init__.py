@@ -9,13 +9,13 @@ Here lies default settings.
 SQUEEZE_SUBSCRIBER_MANAGER = getattr(settings, 'SQUEEZE_SUBSCRIBER_MANAGER', 'squeezemail.models.SubscriberManager')
 
 # Set this to your custom Drip handler class if you need to customize how drips are... handled.
-SQUEEZE_DRIP_HANDLER = getattr(settings, 'SQUEEZE_DRIP_HANDLER', 'squeezemail.handlers.HandleDrip')
+SQUEEZE_EMAILMESSAGE_HANDLER = getattr(settings, 'SQUEEZE_EMAILMESSAGE_HANDLER', 'squeezemail.handlers.HandleEmailMessage')
 
 # If you have 1,000 users to send to at once, a setting of 100 will cut it up into 10 queue 'chunks' of 100 each.
 # For example, this allows you to have 4 workers work on a big email queue at the same time without bumping into each
 # other. This helps solve the huge (100,000+) email broadcasts taking 24+ hours to send out.
 # Be aware of your email server's send limits.
-SQUEEZE_CELERY_EMAIL_CHUNK_SIZE = getattr(settings, 'SQUEEZE_CELERY_EMAIL_CHUNK_SIZE', 100)
+SQUEEZE_CELERY_EMAIL_CHUNK_SIZE = getattr(settings, 'SQUEEZE_CELERY_EMAIL_CHUNK_SIZE', 1000)
 
 # For building links in emails.
 SQUEEZE_DEFAULT_HTTP_PROTOCOL = getattr(settings, 'SQUEEZE_DEFAULT_HTTP_PROTOCOL', 'http')

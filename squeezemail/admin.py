@@ -2,14 +2,13 @@ import json
 
 from django import forms
 from django.template import Context
-from django.contrib.contenttypes.admin import GenericTabularInline
+#from django.contrib.contenttypes.admin import GenericTabularInline
 from django.contrib import admin
-from mptt.admin import DraggableMPTTAdmin
+#from mptt.admin import DraggableMPTTAdmin
 
-# from squeezemail.actions.drip.models import ActionDrip
-# from squeezemail.actions.modification.models import ActionModification
-from .models import Drip, SendDrip, QuerySetRule, DripSubject, Subscriber,\
-    Step, Funnel, RichText, Tag, ActionDrip, ActionModification, Subscription
+# from squeezemail.actions.drip.models import DripOperator
+# from squeezemail.actions.modification.models import ModificationOperator
+from .models import EmailMessage, SentEmailMessage, QuerySetRule, Subject, Subscriber, RichText, Tag# Step, Funnel,  DripOperator, ModificationOperator, Subscription
 from .handlers import configured_message_classes, message_class_for
 
 from content_editor.admin import (
@@ -29,61 +28,40 @@ from content_editor.admin import (
 #     media = property(_media)
 
 
-class ActionQuerySetRuleInline(ContentEditorInline):
-    model = QuerySetRule
-    exclude = ('drip',)
-
-    def _media(self):
-        return forms.Media(
-            css={
-                'all': ('css/queryset_rules.css',)
-            },
-        )
-    media = property(_media)
-
-
-class ActionDripInline(ContentEditorInline):
-    model = ActionDrip
+# class ActionQuerySetRuleInline(ContentEditorInline):
+#     model = QuerySetRule
+#     exclude = ('email_message',)
+#
+#     def _media(self):
+#         return forms.Media(
+#             css={
+#                 'all': ('css/queryset_rules.css',)
+#             },
+#         )
+#     media = property(_media)
 
 
-class ActionModificationInline(ContentEditorInline):
-    model = ActionModification
+# class ActionDripInline(ContentEditorInline):
+#     model = DripOperator
+#
+#
+# class ActionModificationInline(ContentEditorInline):
+#     model = ModificationOperator
 
-
-class StepAdmin(DraggableMPTTAdmin, ContentEditor):
-    model = Step
-    generic_raw_id_fields = ['content_object']
-    # raw_id_fields = ('parent',)
-    list_display = ('tree_actions', 'indented_title', 'get_active_subscription_count')
-    list_display_links = ('indented_title',)
-
-    inlines = [
-        ActionDripInline,
-        ActionModificationInline,
-        ActionQuerySetRuleInline,
-        # ActionDecisionInline,
-        # QuerySetRuleInline
-    ]
-
-    def build_extra_context(self, extra_context):
-        from .utils import get_simple_fields
-        extra_context = extra_context or {}
-        extra_context['field_data'] = json.dumps(get_simple_fields(Subscriber))
-        return extra_context
-
-    def add_view(self, request, form_url='', extra_context=None):
-        return super(StepAdmin, self).add_view(
-            request, extra_context=self.build_extra_context(extra_context))
-
-    def change_view(self, request, object_id, form_url='', extra_context=None):
-        return super(StepAdmin, self).change_view(
-            request, object_id, extra_context=self.build_extra_context(extra_context))
-
-
-# class DecisionAdmin(admin.ModelAdmin):
-#     model = Decision
+#
+# class StepAdmin(DraggableMPTTAdmin, ContentEditor):
+#     model = Step
+#     generic_raw_id_fields = ['content_object']
+#     # raw_id_fields = ('parent',)
+#     list_display = ('tree_actions', 'indented_title', 'get_active_subscription_count')
+#     list_display_links = ('indented_title',)
+#
 #     inlines = [
-#         QuerySetRuleInline,
+#         ActionDripInline,
+#         ActionModificationInline,
+#         ActionQuerySetRuleInline,
+#         # ActionDecisionInline,
+#         # QuerySetRuleInline
 #     ]
 #
 #     def build_extra_context(self, extra_context):
@@ -93,35 +71,35 @@ class StepAdmin(DraggableMPTTAdmin, ContentEditor):
 #         return extra_context
 #
 #     def add_view(self, request, form_url='', extra_context=None):
-#         return super(DecisionAdmin, self).add_view(
+#         return super(StepAdmin, self).add_view(
 #             request, extra_context=self.build_extra_context(extra_context))
 #
 #     def change_view(self, request, object_id, form_url='', extra_context=None):
-#         return super(DecisionAdmin, self).change_view(
+#         return super(StepAdmin, self).change_view(
 #             request, object_id, extra_context=self.build_extra_context(extra_context))
 
+#
+# class FunnelAdmin(admin.ModelAdmin):
+#     list_display = ('__str__', 'get_subscription_count')
+#
+#
+# class SubscriptionInline(admin.TabularInline):
+#     model = Subscription
+#     extra = 1
 
-class FunnelAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'get_subscription_count')
 
-
-class SubscriptionInline(admin.TabularInline):
-    model = Subscription
+class EmailMessageSplitSubjectInline(admin.TabularInline):
+    model = Subject
     extra = 1
 
 
-class DripSplitSubjectInline(admin.TabularInline):
-    model = DripSubject
-    extra = 1
-
-
-class DripForm(forms.ModelForm):
+class EmailMessageForm(forms.ModelForm):
     message_class = forms.ChoiceField(
         choices=((k, '%s (%s)' % (k, v)) for k, v in configured_message_classes().items())
     )
 
     class Meta:
-        model = Drip
+        model = EmailMessage
         exclude = []
 
 
@@ -134,7 +112,8 @@ class DripForm(forms.ModelForm):
 
 
 class SubscriberAdmin(admin.ModelAdmin):
-    inlines = [SubscriptionInline]
+    # inlines = [SubscriptionInline]
+    pass
 
 
 class RichTextInline(ContentEditorInline):
@@ -166,8 +145,8 @@ class QuerySetRuleInline(admin.TabularInline):
     media = property(_media)
 
 
-class DripAdmin(ContentEditor):
-    model = Drip
+class EmailMessageAdmin(ContentEditor):
+    model = EmailMessage
     # change_form_template = 'admin/squeezemail/drip/change_form.html'
     # fieldsets = [
     #     (None, {
@@ -186,59 +165,57 @@ class DripAdmin(ContentEditor):
     # )
     # list_display = ('name', 'enabled', 'message_class')
     inlines = [
-        DripSplitSubjectInline,
+        EmailMessageSplitSubjectInline,
         QuerySetRuleInline,
         RichTextInline,
         # ImageInline
     ]
 
-    form = DripForm
+    form = EmailMessageForm
 
     # raw_id_fields = ['parent']
 
     av = lambda self, view: self.admin_site.admin_view(view)
 
-    def drip_broadcast_preview(self, request, drip_id):
-        from django.shortcuts import render, get_object_or_404
-        drip = get_object_or_404(Drip, id=drip_id)
-        handler = drip.handler()
-        handler.prune()  # Only show us subscribers that we're going to be sending to
-        qs = handler.get_queryset()
-        ctx = Context({
-            'drip': drip,
-            'queryset_preview': qs[:20],
-            'count': qs.count(),
-
-        })
-        return render(request, 'admin/squeezemail/drip/broadcast_preview.html', ctx)
-
-    def drip_broadcast_send(self, request, drip_id):
+    def email_message_preview(self, request, email_message_id, subscriber_id):
         from django.shortcuts import get_object_or_404
         from django.http import HttpResponse
-        drip = get_object_or_404(Drip, id=drip_id)
-        result_tasks = drip.handler().broadcast_run()
-        mime = 'text/plain'
-        return HttpResponse('Broadcast queued to celery. You may leave this page.', content_type=mime)
-
-    def view_drip_email(self, request, drip_id, subscriber_id):
-        from django.shortcuts import get_object_or_404
-        from django.http import HttpResponse
-        drip = get_object_or_404(Drip, id=drip_id)
+        email_message = get_object_or_404(EmailMessage, id=email_message_id)
         subscriber = get_object_or_404(Subscriber, id=subscriber_id)
-        MessageClass = message_class_for(drip.message_class)
-        drip_message = MessageClass(drip, subscriber)
+        MessageClass = message_class_for(email_message.message_class)
+        email_message_class = MessageClass(email_message, subscriber)
         html = ''
         mime = ''
-        if drip_message.message.alternatives:
-            for body, mime in drip_message.message.alternatives:
+        if email_message_class.message.alternatives:
+            for body, mime in email_message_class.message.alternatives:
                 if mime == 'text/html':
                     html = body
                     mime = 'text/html'
         else:
             #TODO: consider adding ability to view plaintext email. Leaving this code here to expand upon.
-            html = drip_message.message.body
+            html = email_message_class.message.body
             mime = 'text/plain'
         return HttpResponse(html, content_type=mime)
+
+    def email_message_broadcast_preview(self, request, email_message_id):
+        from django.shortcuts import render, get_object_or_404
+        email_message = get_object_or_404(EmailMessage, id=email_message_id)
+        handler = email_message.handler()
+        qs = handler.prune()  # Only show us subscribers that we're going to be sending to
+        ctx = Context({
+            'email_message': email_message,
+            'queryset_preview': qs[:20],
+            'count': qs.count(),
+        })
+        return render(request, 'admin/squeezemail/emailmessage/broadcast_preview.html', ctx)
+
+    def email_message_broadcast_send(self, request, email_message_id):
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
+        email_message = get_object_or_404(EmailMessage, id=email_message_id)
+        result_tasks = email_message.handler().broadcast_run()
+        mime = 'text/plain'
+        return HttpResponse('Broadcast queued. Email Message "%s" has been disabled to protect you from accidentally sending it out again. You may leave this page.' % email_message.name, content_type=mime)
 
     def build_extra_context(self, extra_context):
         from .utils import get_simple_fields
@@ -247,57 +224,44 @@ class DripAdmin(ContentEditor):
         return extra_context
 
     def add_view(self, request, form_url='', extra_context=None):
-        return super(DripAdmin, self).add_view(
+        return super(EmailMessageAdmin, self).add_view(
             request, extra_context=self.build_extra_context(extra_context))
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
-        return super(DripAdmin, self).change_view(
+        return super(EmailMessageAdmin, self).change_view(
             request, object_id, extra_context=self.build_extra_context(extra_context))
 
     def get_urls(self):
-        from django.conf.urls import patterns, url
-        urls = super(DripAdmin, self).get_urls()
-        my_urls = patterns('',
+        from django.conf.urls import url
+        urls = super(EmailMessageAdmin, self).get_urls()
+        my_urls = [
             url(
-                r'^(?P<drip_id>[\d]+)/preview/(?P<subscriber_id>[\d]+)/$',
-                self.av(self.view_drip_email),
-                name='view_drip_email'
+                r'^(?P<email_message_id>[\d]+)/preview/(?P<subscriber_id>[\d]+)/$',
+                self.av(self.email_message_preview),
+                name='email_message_preview'
             ),
             url(
-                r'^(?P<drip_id>[\d]+)/broadcast/$',
-                self.av(self.drip_broadcast_preview),
-                name='drip_broadcast_preview'
+                r'^(?P<email_message_id>[\d]+)/broadcast/$',
+                self.av(self.email_message_broadcast_preview),
+                name='email_message_broadcast_preview'
             ),
             url(
-                r'^(?P<drip_id>[\d]+)/broadcast/send/$',
-                self.av(self.drip_broadcast_send),
-                name='drip_broadcast_send'
+                r'^(?P<email_message_id>[\d]+)/broadcast/send/$',
+                self.av(self.email_message_broadcast_send),
+                name='email_message_broadcast_send'
             )
-        )
+        ]
         return my_urls + urls
 
 
-class SendDripAdmin(admin.ModelAdmin):
-    list_display = [f.name for f in SendDrip._meta.fields]
+class SentEmailMessageAdmin(admin.ModelAdmin):
+    list_display = [f.name for f in SentEmailMessage._meta.fields]
     ordering = ['-id']
 
 
-# admin.site.register(Campaign, CampaignAdmin)
-# admin.site.register(CampaignSubscription)
-admin.site.register(Drip, DripAdmin)
+admin.site.register(EmailMessage, EmailMessageAdmin)
 admin.site.register(Subscriber, SubscriberAdmin)
-admin.site.register(Step, StepAdmin)
-# admin.site.register(Modify)
-# admin.site.register(Delay)
+# admin.site.register(Step, StepAdmin)
 admin.site.register(Tag)
-# admin.site.register(Decision, DecisionAdmin)
-admin.site.register(Funnel, FunnelAdmin)
-admin.site.register(SendDrip, SendDripAdmin)
-
-# admin.site.register(
-#     Drip, ContentEditor,
-#     # inlines=[
-#     #     RichTextInline,
-#     #     # ContentEditorInline.create(model=Download),
-#     # ],
-# )
+# admin.site.register(Funnel, FunnelAdmin)
+admin.site.register(SentEmailMessage, SentEmailMessageAdmin)
