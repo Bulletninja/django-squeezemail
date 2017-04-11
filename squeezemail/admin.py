@@ -113,7 +113,7 @@ class EmailMessageForm(forms.ModelForm):
 
 class SubscriberAdmin(admin.ModelAdmin):
     # inlines = [SubscriptionInline]
-    pass
+    raw_id_fields = ('user',)
 
 
 class RichTextInline(ContentEditorInline):
