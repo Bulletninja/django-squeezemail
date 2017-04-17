@@ -202,6 +202,8 @@ class EmailMessageAdmin(ContentEditor):
         email_message = get_object_or_404(EmailMessage, id=email_message_id)
         handler = email_message.handler()
         qs = handler.prune()  # Only show us subscribers that we're going to be sending to
+        if email_message.slice:
+            qs = handler.apply_slice(subscriber_list=qs, slice=email_message.slice)
         ctx = Context({
             'email_message': email_message,
             'queryset_preview': qs[:20],

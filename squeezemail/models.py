@@ -359,6 +359,12 @@ class Subject(models.Model):
 
 
 class EmailMessage(models.Model):
+    ORDER_CHOICES = (
+        ('created', 'Oldest first'),
+        ('-created', 'Newest first'),
+        ('?', 'Random')
+    )
+
     regions = [
         Region(key='body', title='Main Body'),
         # Region(key='split_test', title='Split Test Body',
@@ -377,6 +383,8 @@ class EmailMessage(models.Model):
     from_email = models.EmailField(null=True, blank=True, help_text='Set a custom from email.')
     from_email_name = models.CharField(max_length=150, null=True, blank=True, help_text="Set a name for a custom from email.")
     message_class = models.CharField(max_length=120, blank=True, default='default')
+    slice = models.IntegerField(null=True, blank=True, help_text='Send to only a specific amount of subscribers. Useful for testing to a portion of the list. A value of 1000 would send to 1000 subscribers each time this EmailMessage is sent out.')
+    subscriber_order = models.CharField(max_length=25, choices=ORDER_CHOICES, default='created', help_text='Send out to subscribers in this order.')
     send_after = models.DateTimeField(blank=True, null=True)
     disable_after_broadcast = models.BooleanField(default=False, help_text="Useful with 'send after' broadcasts. After broadcast is initiated, disable this drip so it won't try to go out again.")
     created = models.DateTimeField(auto_now_add=True)
@@ -683,7 +691,7 @@ class Subscriber(models.Model):
     email = models.EmailField(max_length=254, db_index=True, unique=True)
     is_active = models.BooleanField(verbose_name="Active", default=True)
     created = models.DateTimeField(default=timezone.now)
-    tags = models.ManyToManyField('Tag', related_name='subscribers', null=True, blank=True)
+    tags = models.ManyToManyField('Tag', related_name='subscribers', blank=True)
     idle = models.BooleanField(default=False)
 
     objects = SubscriberManager()

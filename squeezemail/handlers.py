@@ -277,21 +277,26 @@ class HandleEmailMessage(object):
         email_message = self.email_message_model
         if email_message.enabled:
             subscriber_id_list = self.prune().values_list('id', flat=True)
+            if email_message.slice:
+                subscriber_id_list = self.apply_slice(subscriber_list=subscriber_id_list, slice=email_message.slice)
             self.broadcast_send(email_message_id=email_message.id, subscriber_id_list=subscriber_id_list)
             return self.email_message_model.disable()
         return
 
     def prune(self):
         """
-        Do an exclude for all Users who have a SendDrip already.
+        Do an exclude for all Subscribers who have a SentEmailMessage already.
         """
         target_subscriber_ids = self.get_queryset().values_list('id', flat=True)
         exclude_subscriber_ids = SentEmailMessage.objects.filter(
             email_message_id=self.email_message_model.id,
             subscriber_id__in=target_subscriber_ids
         ).values_list('subscriber_id', flat=True)
-        self._queryset = self.get_queryset().exclude(id__in=exclude_subscriber_ids)
+        self._queryset = self.get_queryset().exclude(id__in=exclude_subscriber_ids).order_by(self.email_message_model.subscriber_order)
         return self._queryset
+
+    def apply_slice(self, subscriber_list, slice):
+        return subscriber_list[0:slice]
 
     def send(self):
         """
