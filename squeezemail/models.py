@@ -461,23 +461,30 @@ class EmailMessage(models.Model):
         qs = qs.filter(*clauses['filter'])
         return qs
 
+    def total_sent(self):
+        return self.sent_email_messages.all().count()
+
     def open_rate(self):
-        total_sent = self.sent_email_messages.filter().count()
-        total_opened = Open.objects.filter(email_message_id=self.pk).count()
-        return (total_opened / total_sent) * 100
+        total_sent = self.total_sent()
+        total_opened = Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
+        if total_sent > 0 and total_opened > 0:
+            return (total_opened / total_sent) * 100
+        return 0
 
     def click_through_rate(self):
-        total_sent = self.sent_email_messages.filter().count()
-        total_clicked = Click.objects.filter(email_message_id=self.pk).count()
-        return (total_clicked / total_sent) * 100
+        total_sent = self.total_sent()
+        total_clicked = Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
+        if total_sent > 0 and total_clicked > 0:
+            return (total_clicked / total_sent) * 100
+        return 0
 
     def click_to_open_rate(self):
         """
         Click to open rate is the percentage of recipients who opened
         the email message and also clicked on any link in the email message.
         """
-        total_opened = Open.objects.filter(email_message_id=self.pk).count()
-        total_clicked = Click.objects.filter(email_message_id=self.pk).count()
+        total_opened = Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
+        total_clicked = Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
         return (total_opened / total_clicked) * 100
 
     def disable(self):
@@ -529,7 +536,7 @@ class Open(models.Model):
 
 class Click(models.Model):
     sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
-    ddate = models.DateTimeField(default=timezone.now)
+    date = models.DateTimeField(default=timezone.now)
 
 
 class Spam(models.Model):
@@ -667,7 +674,7 @@ class SubscriberManager(models.Manager):
     def get_or_add(self, email, *args, **kwargs):
         try:
             #Try to get existing subscriber
-            subscriber = self.get(email=email)
+            subscriber = self.get(email__iexact=email)
         except self.model.DoesNotExist:
             try:
                 # Subscriber doesn't exist. Does a user exist with the same email?
