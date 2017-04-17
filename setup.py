@@ -57,7 +57,7 @@ if sys.argv[-1] == 'publish':
 
 setup(
     name='django-squeezemail',
-    version='0.11.0',
+    version='0.11.1',
     author=author,
     author_email=author_email,
     packages=get_packages(package),
