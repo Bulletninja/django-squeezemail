@@ -164,6 +164,7 @@ class EmailMessageAdmin(ContentEditor):
         'message_class',
         'total_sent',
         'total_opened',
+        'total_clicked',
         'total_unsubscribed',
         'total_bounced',
         'total_spammed',
@@ -182,6 +183,10 @@ class EmailMessageAdmin(ContentEditor):
     def total_opened(self, obj):
         return obj.total_opened
     total_opened.short_description = "Opened"
+
+    def total_clicked(self, obj):
+        return obj.total_clicked
+    total_clicked.short_description = "Clicked"
 
     def total_unsubscribed(self, obj):
         return obj.total_unsubscribed

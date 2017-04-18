@@ -489,14 +489,14 @@ class EmailMessage(models.Model):
         total_sent = self.total_sent
         total_opened = self.total_opened
         if total_sent > 0 and total_opened > 0:
-            return "{0:.0f}%".format((total_opened / total_sent) * 100)
+            return "{0:.0f}%".format((total_opened / total_sent) * 100.0)
         return 0
 
     def click_rate(self):
         total_sent = self.total_sent
         total_clicked = self.total_clicked
         if total_sent > 0 and total_clicked > 0:
-            return "{0:.0f}%".format((total_clicked / total_sent) * 100)
+            return "{0:.0f}%".format((total_clicked / total_sent) * 100.0)
         return 0
 
     def click_to_open_rate(self):
@@ -507,28 +507,28 @@ class EmailMessage(models.Model):
         total_opened = self.total_opened
         total_clicked = self.total_clicked
         if total_opened > 0 and total_clicked > 0:
-            return "{0:.0f}%".format((total_clicked / total_opened) * 100)
+            return "{0:.0f}%".format((total_clicked / total_opened) * 100.0)
         return 0
 
     def bounce_rate(self):
         total_sent = self.total_sent
         total_bounced = self.total_bounced
         if total_sent > 0 and total_bounced > 0:
-            return "{0:.0f}%".format((total_bounced / total_sent) * 100)
+            return "{0:.0f}%".format((total_bounced / total_sent) * 100.0)
         return 0
 
     def unsubscribe_rate(self):
         total_sent = self.total_sent
         total_unsubscribed = self.total_unsubscribed
         if total_sent > 0 and total_unsubscribed > 0:
-            return "{0:.0f}%".format((total_unsubscribed / total_sent) * 100)
+            return "{0:.0f}%".format((total_unsubscribed / total_sent) * 100.0)
         return 0
 
     def spam_rate(self):
         total_sent = self.total_sent
         total_spammed = self.total_spammed
         if total_sent > 0 and total_spammed > 0:
-            return "{0:.0f}%".format((total_spammed / total_sent) * 100)
+            return "{0:.0f}%".format((total_spammed / total_sent) * 100.0)
         return 0
 
     def disable(self):
