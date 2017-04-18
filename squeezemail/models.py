@@ -461,21 +461,42 @@ class EmailMessage(models.Model):
         qs = qs.filter(*clauses['filter'])
         return qs
 
+    @cached_property
     def total_sent(self):
         return self.sent_email_messages.all().count()
 
+    @cached_property
+    def total_opened(self):
+        return Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
+
+    @cached_property
+    def total_clicked(self):
+        return Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
+
+    @cached_property
+    def total_unsubscribed(self):
+        return Unsubscribe.objects.filter(sent_email_message__email_message_id=self.pk).count()
+
+    @cached_property
+    def total_bounced(self):
+        return Bounce.objects.filter(sent_email_message__email_message_id=self.pk).count()
+
+    @cached_property
+    def total_spammed(self):
+        return Spam.objects.filter(sent_email_message__email_message_id=self.pk).count()
+
     def open_rate(self):
-        total_sent = self.total_sent()
-        total_opened = Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
+        total_sent = self.total_sent
+        total_opened = self.total_opened
         if total_sent > 0 and total_opened > 0:
-            return (total_opened / total_sent) * 100
+            return "{0:.0f}%".format((total_opened / total_sent) * 100)
         return 0
 
-    def click_through_rate(self):
-        total_sent = self.total_sent()
-        total_clicked = Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
+    def click_rate(self):
+        total_sent = self.total_sent
+        total_clicked = self.total_clicked
         if total_sent > 0 and total_clicked > 0:
-            return (total_clicked / total_sent) * 100
+            return "{0:.0f}%".format((total_clicked / total_sent) * 100)
         return 0
 
     def click_to_open_rate(self):
@@ -483,9 +504,32 @@ class EmailMessage(models.Model):
         Click to open rate is the percentage of recipients who opened
         the email message and also clicked on any link in the email message.
         """
-        total_opened = Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
-        total_clicked = Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
-        return (total_opened / total_clicked) * 100
+        total_opened = self.total_opened
+        total_clicked = self.total_clicked
+        if total_opened > 0 and total_clicked > 0:
+            return "{0:.0f}%".format((total_clicked / total_opened) * 100)
+        return 0
+
+    def bounce_rate(self):
+        total_sent = self.total_sent
+        total_bounced = self.total_bounced
+        if total_sent > 0 and total_bounced > 0:
+            return "{0:.0f}%".format((total_bounced / total_sent) * 100)
+        return 0
+
+    def unsubscribe_rate(self):
+        total_sent = self.total_sent
+        total_unsubscribed = self.total_unsubscribed
+        if total_sent > 0 and total_unsubscribed > 0:
+            return "{0:.0f}%".format((total_unsubscribed / total_sent) * 100)
+        return 0
+
+    def spam_rate(self):
+        total_sent = self.total_sent
+        total_spammed = self.total_spammed
+        if total_sent > 0 and total_spammed > 0:
+            return "{0:.0f}%".format((total_spammed / total_sent) * 100)
+        return 0
 
     def disable(self):
         self.enabled = False

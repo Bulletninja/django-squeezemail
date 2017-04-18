@@ -114,6 +114,9 @@ class EmailMessageForm(forms.ModelForm):
 class SubscriberAdmin(admin.ModelAdmin):
     # inlines = [SubscriptionInline]
     raw_id_fields = ('user',)
+    search_fields = ['email', 'user__email', 'user__username', 'id', 'tags__name']
+    list_display = ['email', 'created', 'is_active', 'idle']
+    list_filter = ['created', 'is_active', 'idle']
 
 
 class RichTextInline(ContentEditorInline):
@@ -158,8 +161,64 @@ class EmailMessageAdmin(ContentEditor):
     list_display=(
         'name',
         'enabled',
-        'message_class'
+        'message_class',
+        'total_sent',
+        'total_opened',
+        'total_unsubscribed',
+        'total_bounced',
+        'total_spammed',
+        'open_rate',
+        'click_rate',
+        'click_to_open_rate',
+        'bounce_rate',
+        'unsubscribe_rate',
+        'spam_rate'
     )
+
+    def total_sent(self, obj):
+        return obj.total_sent
+    total_sent.short_description = "Sent"
+
+    def total_opened(self, obj):
+        return obj.total_opened
+    total_opened.short_description = "Opened"
+
+    def total_unsubscribed(self, obj):
+        return obj.total_unsubscribed
+    total_unsubscribed.short_description = "Unsubscribed"
+
+    def total_bounced(self, obj):
+        return obj.total_bounced
+    total_bounced.short_description = "Bounced"
+
+    def total_spammed(self, obj):
+        return obj.total_spammed
+    total_spammed.short_description = "Spam Reports"
+
+    def open_rate(self, obj):
+        return obj.open_rate()
+    open_rate.short_description = "Open Rate"
+
+    def click_rate(self, obj):
+        return obj.click_rate()
+    click_rate.short_description = "Click Rate"
+
+    def click_to_open_rate(self, obj):
+        return obj.click_to_open_rate()
+    click_to_open_rate.short_description = "Click to Open Rate"
+
+    def bounce_rate(self, obj):
+        return obj.bounce_rate()
+    bounce_rate.short_description = "Bounce Rate"
+
+    def unsubscribe_rate(self, obj):
+        return obj.unsubscribe_rate()
+    unsubscribe_rate.short_description = "Unsubscribe Rate"
+
+    def spam_rate(self, obj):
+        return obj.spam_rate()
+    spam_rate.short_description = "Spam Report Rate"
+
     # list_display_links=(
     #     'indented_title',
     # )
@@ -257,8 +316,30 @@ class EmailMessageAdmin(ContentEditor):
 
 
 class SentEmailMessageAdmin(admin.ModelAdmin):
-    list_display = [f.name for f in SentEmailMessage._meta.fields]
+    # list_display = [f.name for f in SentEmailMessage._meta.fields]
     ordering = ['-id']
+    list_display = ['id', 'date', 'subscriber', 'email_message', 'opened', 'clicked', 'unsubscribed', 'bounced', 'spammed']
+    search_fields = ['subscriber__email']
+
+    def opened(self, obj):
+        return obj.opened
+    opened.short_description = "Opened"
+
+    def clicked(self, obj):
+        return obj.clicked
+    clicked.short_description = "Clicked"
+
+    def unsubscribed(self, obj):
+        return obj.unsubscribed
+    unsubscribed.short_description = "Unsubscribed"
+
+    def bounced(self, obj):
+        return obj.bounced
+    bounced.short_description = "Bounced"
+
+    def spammed(self, obj):
+        return obj.spammed
+    spammed.short_description = "Spammed"
 
 
 admin.site.register(EmailMessage, EmailMessageAdmin)
