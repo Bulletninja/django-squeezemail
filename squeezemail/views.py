@@ -55,7 +55,8 @@ def email_message_click(request):
 
     for key, value in request.GET.items():
         if key.startswith('sq_'):
-            sq_params[key] = value
+            # plaintext currently adds a ')' to the end, and sometimes people end up sending us the ')'
+            sq_params[key] = value.replace(')', '')
         else:
             orig_params[key] = value
     sq_params['sq_cid'] = get_client_id(request)
