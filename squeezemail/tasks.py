@@ -1,18 +1,26 @@
 from hashlib import md5
 
 from celery import shared_task, task
-from django.conf import settings
+# from django.conf import settings
 # from django.contrib.auth import get_user_model
 # from django.core.exceptions import ObjectDoesNotExist
 from django.core.mail import get_connection
 from django.core.cache import cache
 from django.utils import dateparse
+from django.db import IntegrityError
 from google_analytics_reporter.tracking import Event
-
-from squeezemail import SQUEEZE_PREFIX
+from django.utils import timezone
+from squeezemail import SQUEEZE_BROADCAST_BACKEND_KWARGS
+from squeezemail import SQUEEZE_EMAIL_CONNECTION_TIMEOUT
+from squeezemail import SQUEEZE_PREFIX, SQUEEZE_EMAIL_BACKEND, SQUEEZE_BROADCAST_EMAIL_RATE_LIMIT
 from .models import SentEmailMessage, EmailMessage, Subscriber, Open, Click, Subject, Unsubscribe
 
+from celery import Task
 from celery.utils.log import get_task_logger
+
+# from celery import app
+# from boto.ses.exceptions import SESAddressBlacklistedError, SESDomainEndsWithDotError, SESLocalAddressCharacterError, SESIllegalAddressError
+# from django.core.mail import send_mail, EmailMessage
 logger = get_task_logger(__name__)
 
 LOCK_EXPIRE = (60 * 60) * 24  # Lock expires in 24 hours if it never gets unlocked
@@ -28,8 +36,67 @@ def run_steps():
     #     step.run()
     return
 
+
+class EmailConnectionTask(Task):
+    """
+    For persisting the email connection and setting the rate limit
+    """
+    _connection = None
+    _timeout = None
+
+    def __init__(self):
+        super(EmailConnectionTask, self).__init__()
+        self.rate_limit = SQUEEZE_BROADCAST_EMAIL_RATE_LIMIT
+        self.backend_kwargs = SQUEEZE_BROADCAST_BACKEND_KWARGS or {}
+
+    # def is_timed_out(self):
+    #     if self._timeout is None:
+    #         return True
+    #     return timezone.now() > self._timeout
+
+    @property
+    def connection(self):
+        # timed_out = self.is_timed_out()
+
+        if self._connection is None:
+            self._connection = get_connection(backend=SQUEEZE_EMAIL_BACKEND, **self.backend_kwargs)
+            # self._timeout = timezone.now() + timezone.timedelta(minutes=SQUEEZE_EMAIL_CONNECTION_TIMEOUT)
+        return self._connection
+
+
+@task(base=EmailConnectionTask, ignore_result=True)
+def send_email_message_task(email_message_id, subscriber_id, backend_kwargs=None):
+    sent_email_exists = SentEmailMessage.objects.filter(subscriber_id=subscriber_id, email_message_id=email_message_id).exists()
+
+    if not sent_email_exists:
+        from squeezemail.handlers import message_class_for
+        conn = send_email_message_task.connection
+
+        try:
+            email_message = EmailMessage.objects.get(id=email_message_id)
+            MessageClass = message_class_for(email_message.message_class)
+
+            subscriber = Subscriber.objects.get(pk=subscriber_id)
+            message_instance = MessageClass(email_message, subscriber)
+            sent = conn.send_messages([message_instance.message])
+            if sent is not None:
+                SentEmailMessage.objects.create(subscriber_id=subscriber_id, email_message_id=email_message_id)
+                logger.info("Successfully sent email message to subscriber %i.", subscriber_id)
+        except EmailMessage.DoesNotExist:
+            logger.warning("EmailMessage %i doesn't exist" % email_message_id)
+            return
+        except Subscriber.DoesNotExist:
+            logger.warning("Subscriber %i doesn't exist" % subscriber_id)
+        except IntegrityError as e:  # Trouble creating the SentEmailMessage.
+            logger.critical("Error trying to create SentEmailMessage %i for Subscriber %i. (%r)", email_message_id, subscriber_id, e)
+        except Exception as e:
+            logger.warning("Failed to send email message to %i. (%r)", subscriber_id, e)
+            #send_email_message_task.retry([[message], combined_kwargs], exc=e, throw=False)
+    return
+
+
 @task(bind=True)
-def send_email_message(self, email_message_id, subscriber_id_list, backend_kwargs=None, *args, **kwargs):
+def queue_email_messages_task(self, email_message_id, subscriber_id_list, backend_kwargs=None, *args, **kwargs):
     """
     Used to send email messages to massive lists (100k+). Sending a broadcast uses this.
     """
@@ -54,62 +121,104 @@ def send_email_message(self, email_message_id, subscriber_id_list, backend_kwarg
     if acquire_lock():
         messages_sent = 0
         try:
-            from squeezemail.handlers import message_class_for
-            # backward compat: handle **kwargs and missing backend_kwargs
             combined_kwargs = {}
             if backend_kwargs is not None:
                 combined_kwargs.update(backend_kwargs)
             combined_kwargs.update(kwargs)
 
-            try:
-                email_message = EmailMessage.objects.get(id=email_message_id)
-                MessageClass = message_class_for(email_message.message_class)
-            except EmailMessage.DoesNotExist:
-                logger.warning("EmailMessage %i doesn't exist" % email_message_id)
-                return
+            for subscriber_id in subscriber_id_list:
+                send_email_message_task.delay(email_message_id, subscriber_id)
 
-            conn = get_connection(backend=settings.EMAIL_BACKEND, **combined_kwargs)
-            try:
-                conn.open()
-            except Exception as e:
-                logger.exception("Cannot reach EMAIL_BACKEND %s. (%r)", settings.EMAIL_BACKEND, e)
-
-            for subscriber in Subscriber.objects.filter(pk__in=subscriber_id_list):
-                sent_email_exists = SentEmailMessage.objects.filter(subscriber_id=subscriber.pk, email_message_id=email_message_id).exists()
-
-                try:
-                    if not sent_email_exists:
-                        message_instance = MessageClass(email_message, subscriber)
-                        sent = conn.send_messages([message_instance.message])
-
-                        if sent is not None:
-                            SentEmailMessage.objects.create(subscriber_id=subscriber.pk, email_message_id=email_message_id)
-                            messages_sent += 1
-                            logger.debug("Successfully sent email message to subscriber %i.", subscriber.pk)
-                            # Move subscriber to next step only after their drip has been sent
-                            # subscriber.move_to_step(next_step_id)
-                            # process_sent.delay(
-                            #     user_id=subscriber.id,
-                            #     subject=message_instance.subject,
-                            #     drip_id=drip_id,
-                            #     drip_name=drip.name,
-                            #     source='broadcast',
-                            #     split='main'
-                            # )
-                except SentEmailMessage.IntegrityError as e:  # Trouble creating the SentEmailMessage.
-                    logger.critical("Error trying to create SentEmailMessage %i for Subscriber %i. (%r)", email_message_id, subscriber.pk, e)
-                    continue
-                except Exception as e:
-                    logger.warning("Failed to send email message to %i. (%r)", subscriber.pk, e)
-                    #send_drip.retry([[message], combined_kwargs], exc=e, throw=False)
-                    continue
-            conn.close()
         finally:
             release_lock()
-            logger.info("EmailMessage %i chunk successfully sent: %i", email_message_id, messages_sent)
+            logger.info("EmailMessage %i chunk successfully queued: %i", email_message_id, messages_sent)
         return
-    logger.info('EmailMessage %i is already being sent by another worker', email_message_id)
+    logger.info('EmailMessage %i is already being queued by another worker', email_message_id)
     return
+
+
+# @task(bind=True)
+# def send_email_message(self, email_message_id, subscriber_id_list, backend_kwargs=None, *args, **kwargs):
+#     """
+#     Used to send email messages to massive lists (100k+). Sending a broadcast uses this.
+#     """
+#     first_subscriber_id = subscriber_id_list[0]
+#
+#     # The cache key consists of the squeeze_prefix (if it exists), drip id, first user id in the list and the MD5 digest.
+#     # This is to prevent a subscriber receiving 1 email multiple times if 2+ identical tasks are queued. The workers tend
+#     # to be so fast, that I've tested it without this and a subscriber was able to receive 1 email ~10 times when a bunch of
+#     # identical stale tasks were sitting in the queue waiting for celery to start.
+#     # Adding in the first_subscriber_id stops this from happening. Haven't figured out a better way yet.
+#     drip_id_hexdigest = md5(str(SQUEEZE_PREFIX).encode('utf-8') + str(email_message_id).encode('utf-8') + '_'.encode('utf-8') + str(first_subscriber_id).encode('utf-8')).hexdigest()
+#     # drip_id_hexdigest = md5(str(SQUEEZE_PREFIX).encode('utf-8') + str(drip_id).encode('utf-8')).hexdigest()
+#     lock_id = '{0}-lock-{1}'.format(self.name, drip_id_hexdigest)
+#
+#     # cache.add fails if the key already exists
+#     acquire_lock = lambda: cache.add(lock_id, 'true', LOCK_EXPIRE)
+#     # memcache delete is very slow, but we have to use it to take
+#     # advantage of using add() for atomic locking
+#     release_lock = lambda: cache.delete(lock_id)
+#
+#     logger.debug('Attempting to aquire lock for email_message_id %i', email_message_id)
+#     if acquire_lock():
+#         messages_sent = 0
+#         try:
+#             from squeezemail.handlers import message_class_for
+#             # backward compat: handle **kwargs and missing backend_kwargs
+#             combined_kwargs = {}
+#             if backend_kwargs is not None:
+#                 combined_kwargs.update(backend_kwargs)
+#             combined_kwargs.update(kwargs)
+#
+#             try:
+#                 email_message = EmailMessage.objects.get(id=email_message_id)
+#                 MessageClass = message_class_for(email_message.message_class)
+#             except EmailMessage.DoesNotExist:
+#                 logger.warning("EmailMessage %i doesn't exist" % email_message_id)
+#                 return
+#
+#             conn = get_connection(backend=settings.EMAIL_BACKEND, **combined_kwargs)
+#             try:
+#                 conn.open()
+#             except Exception as e:
+#                 logger.exception("Cannot reach EMAIL_BACKEND %s. (%r)", settings.EMAIL_BACKEND, e)
+#
+#             for subscriber in Subscriber.objects.filter(pk__in=subscriber_id_list):
+#                 sent_email_exists = SentEmailMessage.objects.filter(subscriber_id=subscriber.pk, email_message_id=email_message_id).exists()
+#
+#                 try:
+#                     if not sent_email_exists:
+#                         message_instance = MessageClass(email_message, subscriber)
+#                         sent = conn.send_messages([message_instance.message])
+#
+#                         if sent is not None:
+#                             SentEmailMessage.objects.create(subscriber_id=subscriber.pk, email_message_id=email_message_id)
+#                             messages_sent += 1
+#                             logger.debug("Successfully sent email message to subscriber %i.", subscriber.pk)
+#                             # Move subscriber to next step only after their drip has been sent
+#                             # subscriber.move_to_step(next_step_id)
+#                             # process_sent.delay(
+#                             #     user_id=subscriber.id,
+#                             #     subject=message_instance.subject,
+#                             #     drip_id=drip_id,
+#                             #     drip_name=drip.name,
+#                             #     source='broadcast',
+#                             #     split='main'
+#                             # )
+#                 except SentEmailMessage.IntegrityError as e:  # Trouble creating the SentEmailMessage.
+#                     logger.critical("Error trying to create SentEmailMessage %i for Subscriber %i. (%r)", email_message_id, subscriber.pk, e)
+#                     continue
+#                 except Exception as e:
+#                     logger.warning("Failed to send email message to %i. (%r)", subscriber.pk, e)
+#                     #send_drip.retry([[message], combined_kwargs], exc=e, throw=False)
+#                     continue
+#             conn.close()
+#         finally:
+#             release_lock()
+#             logger.info("EmailMessage %i chunk successfully sent: %i", email_message_id, messages_sent)
+#         return
+#     logger.info('EmailMessage %i is already being sent by another worker', email_message_id)
+#     return
 
 
 # @task(bind=True)

@@ -1,3 +1,4 @@
+import json
 import sys
 import logging
 
@@ -32,7 +33,7 @@ from content_editor.contents import contents_for_item
 from content_editor.renderer import PluginRenderer
 from .utils import get_token_for_email
 from . import SQUEEZE_CELERY_EMAIL_CHUNK_SIZE, SQUEEZE_DEFAULT_HTTP_PROTOCOL, SQUEEZE_DEFAULT_FROM_EMAIL
-from .tasks import send_email_message, process_sent
+from .tasks import queue_email_messages_task, process_sent
 from .models import SentEmailMessage, Subscriber, RichText
 from .utils import chunked
 
@@ -133,7 +134,15 @@ class RenderEmailMessage(object):
     @property
     def message(self):
         if not self._message:
-            self._message = EmailMultiAlternatives(self.subject, self.plain, self.from_email, [self.subscriber.email])
+            self._message = EmailMultiAlternatives(self.subject, self.plain, self.from_email, [self.subscriber.email],
+                headers={
+                    "X-SMTPAPI": json.dumps({
+                        "unique_args": {
+                            "msg_pk": self.email_message.pk,
+                            "sub_pk": self.subscriber.pk,
+                        }
+                    })
+                })
             self._message.attach_alternative(self.body, 'text/html')
         return self._message
 
@@ -381,6 +390,6 @@ class HandleEmailMessage(object):
 
         chunk_size = SQUEEZE_CELERY_EMAIL_CHUNK_SIZE
         for chunk in chunked(subscriber_id_list, chunk_size):
-            send_email_message.delay(email_message_id, chunk, *args, **kwargs)
+            queue_email_messages_task.delay(email_message_id, chunk, *args, **kwargs)
         logging.info('Email message broadcast chunk(s) queued for sending')
         return
