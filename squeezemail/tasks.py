@@ -1,6 +1,6 @@
 from hashlib import md5
 
-from celery import shared_task, task
+from celery import shared_task, task, Task
 # from django.conf import settings
 # from django.contrib.auth import get_user_model
 # from django.core.exceptions import ObjectDoesNotExist
@@ -8,14 +8,13 @@ from django.core.mail import get_connection
 from django.core.cache import cache
 from django.utils import dateparse
 from django.db import IntegrityError
-from google_analytics_reporter.tracking import Event
-from django.utils import timezone
+# from google_analytics_reporter.tracking import Event
+# from django.utils import timezone
 from squeezemail import SQUEEZE_BROADCAST_BACKEND_KWARGS
-from squeezemail import SQUEEZE_EMAIL_CONNECTION_TIMEOUT
+# from squeezemail import SQUEEZE_EMAIL_CONNECTION_TIMEOUT
 from squeezemail import SQUEEZE_PREFIX, SQUEEZE_EMAIL_BACKEND, SQUEEZE_BROADCAST_EMAIL_RATE_LIMIT
 from .models import SentEmailMessage, EmailMessage, Subscriber, Open, Click, Subject, Unsubscribe
 
-from celery import Task
 from celery.utils.log import get_task_logger
 
 # from celery import app
@@ -324,18 +323,18 @@ def process_sent(**kwargs):
     email_message_name = kwargs.get('email_message_name', None)
     source = kwargs.get('source', None)
     split = kwargs.get('split', None)
-    Event(user_id=user_id)\
-        .send(
-        category='email',
-        action='sent',
-        document_path='/email/',
-        document_title=subject,
-        campaign_id=email_message_id,
-        campaign_name=email_message_name,
-        campaign_source=source, #broadcast or step?
-        campaign_medium='email',
-        campaign_content=split  # body split test
-    )
+    # Event(user_id=user_id)\
+    #     .send(
+    #     category='email',
+    #     action='sent',
+    #     document_path='/email/',
+    #     document_title=subject,
+    #     campaign_id=email_message_id,
+    #     campaign_name=email_message_name,
+    #     campaign_source=source, #broadcast or step?
+    #     campaign_medium='email',
+    #     campaign_content=split  # body split test
+    # )
     return
 
 
@@ -371,18 +370,18 @@ def process_open(**kwargs):
                 # utm_content=split ('A' or 'B')
                 # target=target # don't need this for opens, but could be useful in clicks
                 # event = 'open'?
-                Event(user_id=subscriber.id, client_id=ga_cid)\
-                    .sync_send(
-                    category='email',
-                    action='open',
-                    document_path='/email/',
-                    document_title=subject,
-                    campaign_id=email_message_id,
-                    campaign_name=sent_email_message.email_message.name,
-                    # campaign_source='', #broadcast or step?
-                    campaign_medium='email',
-                    campaign_content=split  # body split test
-                )
+                # Event(user_id=subscriber.id, client_id=ga_cid)\
+                #     .sync_send(
+                #     category='email',
+                #     action='open',
+                #     document_path='/email/',
+                #     document_title=subject,
+                #     campaign_id=email_message_id,
+                #     campaign_name=sent_email_message.email_message.name,
+                #     # campaign_source='', #broadcast or step?
+                #     campaign_medium='email',
+                #     campaign_content=split  # body split test
+                # )
         else:
             logger.info("subscriber token didn't match")
 
@@ -416,34 +415,34 @@ def process_click(**kwargs):
                 Open.objects.create(sent_email_message=sent_email_message)
                 logger.debug("SendDrip.open created")
                 # target=target # don't need this for opens, but could be useful in clicks
-                Event(user_id=subscriber.id, client_id=ga_cid)\
-                    .sync_send(
-                    category='email',
-                    action='open',
-                    document_path='/email/',
-                    document_title=subject,
-                    campaign_id=email_message_id,
-                    campaign_name=sent_email_message.email_message.name,
-                    # campaign_source='', #broadcast or step?
-                    campaign_medium='email',
-                    campaign_content=split  # body split test
-                )
+                # Event(user_id=subscriber.id, client_id=ga_cid)\
+                #     .sync_send(
+                #     category='email',
+                #     action='open',
+                #     document_path='/email/',
+                #     document_title=subject,
+                #     campaign_id=email_message_id,
+                #     campaign_name=sent_email_message.email_message.name,
+                #     # campaign_source='', #broadcast or step?
+                #     campaign_medium='email',
+                #     campaign_content=split  # body split test
+                # )
 
             if not sent_email_message.clicked:
                 Click.objects.create(sent_email_message=sent_email_message)
                 logger.debug('Click created')
-                Event(user_id=subscriber.id, client_id=ga_cid)\
-                    .sync_send(
-                    category='email',
-                    action='click',
-                    document_path='/email/',
-                    document_title=subject,
-                    campaign_id=email_message_id,
-                    campaign_name=sent_email_message.email_message.name,
-                    # campaign_source='', #broadcast or step?
-                    campaign_medium='email',
-                    campaign_content=split  # body split test
-                )
+                # Event(user_id=subscriber.id, client_id=ga_cid)\
+                #     .sync_send(
+                #     category='email',
+                #     action='click',
+                #     document_path='/email/',
+                #     document_title=subject,
+                #     campaign_id=email_message_id,
+                #     campaign_name=sent_email_message.email_message.name,
+                #     # campaign_source='', #broadcast or step?
+                #     campaign_medium='email',
+                #     campaign_content=split  # body split test
+                # )
 
             if tag_id:
                 #TODO: tag 'em
@@ -481,18 +480,18 @@ def process_unsubscribe(**kwargs):
                 Unsubscribe.objects.create(sent_email_message=sent_email_message)
                 logger.debug("SendDrip.unsubscribed created")
                 # target=target # don't need this for opens, but could be useful in clicks
-                Event(user_id=subscriber.id, client_id=ga_cid)\
-                    .sync_send(
-                    category='email',
-                    action='unsubscribe',
-                    document_path='/email/',
-                    document_title=subject,
-                    campaign_id=email_message_id,
-                    campaign_name=sent_email_message.email_message.name,
-                    # campaign_source='', #broadcast or step?
-                    campaign_medium='email',
-                    campaign_content=split  # body split test
-                )
+                # Event(user_id=subscriber.id, client_id=ga_cid)\
+                #     .sync_send(
+                #     category='email',
+                #     action='unsubscribe',
+                #     document_path='/email/',
+                #     document_title=subject,
+                #     campaign_id=email_message_id,
+                #     campaign_name=sent_email_message.email_message.name,
+                #     # campaign_source='', #broadcast or step?
+                #     campaign_medium='email',
+                #     campaign_content=split  # body split test
+                # )
         else:
             logger.info("user link didn't match token")
     return
