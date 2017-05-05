@@ -33,7 +33,7 @@ from squeezemail import SQUEEZE_EMAILMESSAGE_HANDLER
 from squeezemail import SQUEEZE_PREFIX
 # from squeezemail import SQUEEZE_SUBSCRIBER_MANAGER
 from squeezemail import plugins
-from squeezemail.utils import class_for, get_token_for_email
+from squeezemail.utils import class_for, get_token_for_email, get_token_for_subscriber_id
 
 from content_editor.models import (
     Region, create_plugin_base
@@ -768,14 +768,14 @@ class Subscriber(models.Model):
         Gets a key/token to pass to email footer's unsubscribe link, so only the owner of the email can unsubscribe.
         Also used to allow database writing for clicks/opens/etc.
         """
-        return get_token_for_email(self.email)
+        return get_token_for_subscriber_id(self.id)
 
     @cached_property
     def token(self):
         return self.get_token()
 
     def match_token(self, token):
-        return str(token) == str(self.token)
+        return str(token) == str(self.token) or str(token) == str(get_token_for_email(self.email))
 
     def step_remove(self, subscriber):
         """

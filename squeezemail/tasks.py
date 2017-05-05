@@ -383,7 +383,7 @@ def process_open(**kwargs):
                 #     campaign_content=split  # body split test
                 # )
         else:
-            logger.info("subscriber token didn't match")
+            logger.info("user open sub_id: %r didn't match token %r", subscriber_id, token)
 
     logger.debug("Email open processed for email message %r and subscriber %r", email_message_id, subscriber_id)
     return
@@ -449,7 +449,7 @@ def process_click(**kwargs):
                 pass
 
         else:
-            logger.info("user link didn't match token")
+            logger.info("user link sub_id: %r didn't match token %r", subscriber_id, token)
 
     logger.info("Email click processed")
     return
@@ -493,5 +493,5 @@ def process_unsubscribe(**kwargs):
                 #     campaign_content=split  # body split test
                 # )
         else:
-            logger.info("user link didn't match token")
+            logger.info("user unsub sub_id: %r didn't match token %r", subscriber_id, token)
     return

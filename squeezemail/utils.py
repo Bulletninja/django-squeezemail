@@ -228,3 +228,8 @@ def class_for(path):
 
 def get_token_for_email(email):
     return hashlib.md5(email.encode('utf-8') + settings.SECRET_KEY.encode('utf-8')).hexdigest()
+
+
+def get_token_for_subscriber_id(subscriber_id):
+    subscriber_id = str(subscriber_id)
+    return hashlib.md5(subscriber_id.encode('utf-8') + settings.SECRET_KEY.encode('utf-8')).hexdigest()
