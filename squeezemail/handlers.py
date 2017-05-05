@@ -214,7 +214,7 @@ class RenderEmailMessage(object):
 
     def get_email_token(self):
         if not self._token:
-            self._token = str(get_token_for_email(self.subscriber.email))
+            self._token = str(self.subscriber.token)
         return self._token
 
     @cached_property
