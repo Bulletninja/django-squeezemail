@@ -11,7 +11,7 @@ try:
 except ImportError:
     from hashlib import md5  # Python 2
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 # from gfklookupwidget.fields import GfkLookupField
 # from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 # from django.contrib.contenttypes.models import ContentType
@@ -466,37 +466,70 @@ class EmailMessage(models.Model):
         return self.sent_email_messages.all().count()
 
     @cached_property
-    def total_opened(self):
+    def total_unique_opens(self):
         return Open.objects.filter(sent_email_message__email_message_id=self.pk).count()
 
     @cached_property
-    def total_clicked(self):
+    def total_opens(self):
+        return Open.objects.filter(sent_email_message__email_message_id=self.pk).aggregate(Sum('total'))['total__sum'] or 0
+
+    @cached_property
+    def total_unique_clicks(self):
         return Click.objects.filter(sent_email_message__email_message_id=self.pk).count()
 
     @cached_property
-    def total_unsubscribed(self):
+    def total_clicks(self):
+        return Click.objects.filter(sent_email_message__email_message_id=self.pk).aggregate(Sum('total'))['total__sum'] or 0
+
+    @cached_property
+    def total_unsubscribes(self):
         return Unsubscribe.objects.filter(sent_email_message__email_message_id=self.pk).count()
 
     @cached_property
-    def total_bounced(self):
+    def total_bounces(self):
         return Bounce.objects.filter(sent_email_message__email_message_id=self.pk).count()
 
     @cached_property
     def total_spammed(self):
         return Spam.objects.filter(sent_email_message__email_message_id=self.pk).count()
 
+    def unique_open_rate(self):
+        total_sent = self.total_sent
+        total_opened = self.total_unique_opens
+        if total_opened and total_sent > 0 and total_opened > 0:
+            return "{0:.2f}%".format((total_opened / total_sent) * 100.0)
+        return 0
+
     def open_rate(self):
         total_sent = self.total_sent
-        total_opened = self.total_opened
-        if total_sent > 0 and total_opened > 0:
+        total_opened = self.total_opens
+        if total_opened and total_sent > 0 and total_opened > 0:
             return "{0:.2f}%".format((total_opened / total_sent) * 100.0)
+        return 0
+
+    def unique_click_rate(self):
+        total_sent = self.total_sent
+        total_clicked = self.total_unique_clicks
+        if total_clicked and total_sent > 0 and total_clicked > 0:
+            return "{0:.2f}%".format((total_clicked / total_sent) * 100.0)
         return 0
 
     def click_rate(self):
         total_sent = self.total_sent
-        total_clicked = self.total_clicked
-        if total_sent > 0 and total_clicked > 0:
+        total_clicked = self.total_clicks
+        if total_clicked and total_sent > 0 and total_clicked > 0:
             return "{0:.2f}%".format((total_clicked / total_sent) * 100.0)
+        return 0
+
+    def unique_click_to_open_rate(self):
+        """
+        Click to open rate is the percentage of recipients who opened
+        the email message and also clicked on any link in the email message.
+        """
+        total_opened = self.total_opens
+        total_clicked = self.total_unique_clicks
+        if total_clicked and total_opened > 0 and total_clicked > 0:
+            return "{0:.2f}%".format((total_clicked / total_opened) * 100.0)
         return 0
 
     def click_to_open_rate(self):
@@ -504,22 +537,22 @@ class EmailMessage(models.Model):
         Click to open rate is the percentage of recipients who opened
         the email message and also clicked on any link in the email message.
         """
-        total_opened = self.total_opened
-        total_clicked = self.total_clicked
-        if total_opened > 0 and total_clicked > 0:
+        total_opened = self.total_opens
+        total_clicked = self.total_clicks
+        if total_clicked and total_opened > 0 and total_clicked > 0:
             return "{0:.2f}%".format((total_clicked / total_opened) * 100.0)
         return 0
 
     def bounce_rate(self):
         total_sent = self.total_sent
-        total_bounced = self.total_bounced
+        total_bounced = self.total_bounces
         if total_sent > 0 and total_bounced > 0:
             return "{0:.2f}%".format((total_bounced / total_sent) * 100.0)
         return 0
 
     def unsubscribe_rate(self):
         total_sent = self.total_sent
-        total_unsubscribed = self.total_unsubscribed
+        total_unsubscribed = self.total_unsubscribes
         if total_sent > 0 and total_unsubscribed > 0:
             return "{0:.2f}%".format((total_unsubscribed / total_sent) * 100.0)
         return 0
@@ -576,11 +609,13 @@ class SentEmailMessage(models.Model):
 class Open(models.Model):
     sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
     date = models.DateTimeField(default=timezone.now)
+    total = models.IntegerField(default=1)
 
 
 class Click(models.Model):
     sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
     date = models.DateTimeField(default=timezone.now)
+    total = models.IntegerField(default=1)
 
 
 class Spam(models.Model):

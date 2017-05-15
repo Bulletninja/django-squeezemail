@@ -163,13 +163,18 @@ class EmailMessageAdmin(ContentEditor):
         'enabled',
         'message_class',
         'total_sent',
-        'total_opened',
-        'total_clicked',
-        'total_unsubscribed',
-        'total_bounced',
+        'total_unique_opens',
+        'total_opens',
+        'total_unique_clicks',
+        'total_clicks',
+        'total_unsubscribes',
+        'total_bounces',
         'total_spammed',
+        'unique_open_rate',
         'open_rate',
+        'unique_click_rate',
         'click_rate',
+        'unique_click_to_open_rate',
         'click_to_open_rate',
         'bounce_rate',
         'unsubscribe_rate',
@@ -180,33 +185,53 @@ class EmailMessageAdmin(ContentEditor):
         return obj.total_sent
     total_sent.short_description = "Sent"
 
-    def total_opened(self, obj):
-        return obj.total_opened
-    total_opened.short_description = "Opened"
+    def total_unique_opens(self, obj):
+        return obj.total_unique_opens
+    total_unique_opens.short_description = "Unique Opens"
 
-    def total_clicked(self, obj):
-        return obj.total_clicked
-    total_clicked.short_description = "Clicked"
+    def total_opens(self, obj):
+        return obj.total_opens
+    total_opens.short_description = "Total Opens"
 
-    def total_unsubscribed(self, obj):
-        return obj.total_unsubscribed
-    total_unsubscribed.short_description = "Unsubscribed"
+    def total_unique_clicks(self, obj):
+        return obj.total_unique_clicks
+    total_unique_clicks.short_description = "Unique Clicks"
 
-    def total_bounced(self, obj):
-        return obj.total_bounced
-    total_bounced.short_description = "Bounced"
+    def total_clicks(self, obj):
+        return obj.total_clicks
+    total_clicks.short_description = "Total Clicks"
+
+    def total_unsubscribes(self, obj):
+        return obj.total_unsubscribes
+    total_unsubscribes.short_description = "Unsubscribes"
+
+    def total_bounces(self, obj):
+        return obj.total_bounces
+    total_bounces.short_description = "Bounces"
 
     def total_spammed(self, obj):
         return obj.total_spammed
     total_spammed.short_description = "Spam Reports"
 
+    def unique_open_rate(self, obj):
+        return obj.unique_open_rate()
+    unique_open_rate.short_description = "Unique Open Rate"
+
     def open_rate(self, obj):
         return obj.open_rate()
     open_rate.short_description = "Open Rate"
 
+    def unique_click_rate(self, obj):
+        return obj.unique_click_rate()
+    unique_click_rate.short_description = "Unique Click Rate"
+
     def click_rate(self, obj):
         return obj.click_rate()
     click_rate.short_description = "Click Rate"
+
+    def unique_click_to_open_rate(self, obj):
+        return obj.unique_click_to_open_rate()
+    unique_click_to_open_rate.short_description = "Unique Click to Open Rate"
 
     def click_to_open_rate(self, obj):
         return obj.click_to_open_rate()

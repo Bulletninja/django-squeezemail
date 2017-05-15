@@ -358,30 +358,34 @@ def process_open(**kwargs):
         if token_matched:  # if token matched, we're allowed to do database writing
             logger.debug("Successfully matched token to user %r.", subscriber.email)
             sent_email_message = SentEmailMessage.objects.get(email_message_id=email_message_id, subscriber_id=subscriber_id)
-            if not sent_email_message.opened:
+            # if not sent_email_message.opened:
+            try:
+                opened = Open.objects.get(sent_email_message=sent_email_message)
+                opened.total += 1
+                opened.save()
+            except Open.DoesNotExist:
                 Open.objects.create(sent_email_message=sent_email_message, date=dateparse.parse_datetime(timestamp))
-                logger.debug("SendDrip.open created")
 
-                subject = Subject.objects.get(id=subject_id).text
+            subject = Subject.objects.get(id=subject_id).text
 
-                # utm_source=drip
-                # utm_campaign=sentdrip.drip.name
-                # utm_medium=email
-                # utm_content=split ('A' or 'B')
-                # target=target # don't need this for opens, but could be useful in clicks
-                # event = 'open'?
-                # Event(user_id=subscriber.id, client_id=ga_cid)\
-                #     .sync_send(
-                #     category='email',
-                #     action='open',
-                #     document_path='/email/',
-                #     document_title=subject,
-                #     campaign_id=email_message_id,
-                #     campaign_name=sent_email_message.email_message.name,
-                #     # campaign_source='', #broadcast or step?
-                #     campaign_medium='email',
-                #     campaign_content=split  # body split test
-                # )
+            # utm_source=drip
+            # utm_campaign=sentdrip.drip.name
+            # utm_medium=email
+            # utm_content=split ('A' or 'B')
+            # target=target # don't need this for opens, but could be useful in clicks
+            # event = 'open'?
+            # Event(user_id=subscriber.id, client_id=ga_cid)\
+            #     .sync_send(
+            #     category='email',
+            #     action='open',
+            #     document_path='/email/',
+            #     document_title=subject,
+            #     campaign_id=email_message_id,
+            #     campaign_name=sent_email_message.email_message.name,
+            #     # campaign_source='', #broadcast or step?
+            #     campaign_medium='email',
+            #     campaign_content=split  # body split test
+            # )
         else:
             logger.info("user open sub_id: %r didn't match token %r", subscriber_id, token)
 
@@ -397,6 +401,7 @@ def process_click(**kwargs):
     subscriber_id = url_kwargs.get('sq_subscriber_id', None)
     email_message_id = url_kwargs.get('sq_email_message_id', None)
     ga_cid = url_kwargs.get('sq_cid', None)
+    timestamp = url_kwargs.get('sq_timestamp', None)
 
     subject_id = url_kwargs.get('sq_subject_id', None)
     split = url_kwargs.get('sq_split', None)
@@ -412,8 +417,7 @@ def process_click(**kwargs):
             subject = Subject.objects.get(id=subject_id).text
             if not sent_email_message.opened:
                 # If there isn't an open, but it was clicked, we make an open.
-                Open.objects.create(sent_email_message=sent_email_message)
-                logger.debug("SendDrip.open created")
+                Open.objects.create(sent_email_message=sent_email_message, date=dateparse.parse_datetime(timestamp))
                 # target=target # don't need this for opens, but could be useful in clicks
                 # Event(user_id=subscriber.id, client_id=ga_cid)\
                 #     .sync_send(
@@ -428,21 +432,26 @@ def process_click(**kwargs):
                 #     campaign_content=split  # body split test
                 # )
 
-            if not sent_email_message.clicked:
-                Click.objects.create(sent_email_message=sent_email_message)
-                logger.debug('Click created')
-                # Event(user_id=subscriber.id, client_id=ga_cid)\
-                #     .sync_send(
-                #     category='email',
-                #     action='click',
-                #     document_path='/email/',
-                #     document_title=subject,
-                #     campaign_id=email_message_id,
-                #     campaign_name=sent_email_message.email_message.name,
-                #     # campaign_source='', #broadcast or step?
-                #     campaign_medium='email',
-                #     campaign_content=split  # body split test
-                # )
+            # if not sent_email_message.clicked:
+            try:
+                clicked = Click.objects.get(sent_email_message=sent_email_message)
+                clicked.total += 1
+                clicked.save()
+            except Click.DoesNotExist:
+                Click.objects.create(sent_email_message=sent_email_message, date=dateparse.parse_datetime(timestamp))
+
+            # Event(user_id=subscriber.id, client_id=ga_cid)\
+            #     .sync_send(
+            #     category='email',
+            #     action='click',
+            #     document_path='/email/',
+            #     document_title=subject,
+            #     campaign_id=email_message_id,
+            #     campaign_name=sent_email_message.email_message.name,
+            #     # campaign_source='', #broadcast or step?
+            #     campaign_medium='email',
+            #     campaign_content=split  # body split test
+            # )
 
             if tag_id:
                 #TODO: tag 'em
