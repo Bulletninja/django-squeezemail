@@ -31,6 +31,10 @@ I have.
 Cleanse.allowed_tags['a'] += ('id', 'name')  # Allow anchors
 Cleanse.allowed_tags['hr'] = ()  # Allow horizontal rules
 Cleanse.allowed_tags['h1'] = ()  # Allow H1
+Cleanse.allowed_tags['h2'] = ()  # Allow H1
+Cleanse.allowed_tags['h3'] = ()  # Allow H1
+Cleanse.allowed_tags['h4'] = ()  # Allow H1
+Cleanse.allowed_tags['img'] = ()  # Allow H1
 Cleanse.empty_tags += ('hr', 'a')  # Allow empty <hr/> and anchor targets
 
 
