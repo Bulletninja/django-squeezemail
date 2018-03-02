@@ -18,7 +18,7 @@ SQUEEZE_EMAILMESSAGE_HANDLER = getattr(settings, 'SQUEEZE_EMAILMESSAGE_HANDLER',
 SQUEEZE_CELERY_EMAIL_CHUNK_SIZE = getattr(settings, 'SQUEEZE_CELERY_EMAIL_CHUNK_SIZE', 1000)
 
 # For building links in emails.
-SQUEEZE_DEFAULT_HTTP_PROTOCOL = getattr(settings, 'SQUEEZE_DEFAULT_HTTP_PROTOCOL', 'http')
+SQUEEZE_DEFAULT_HTTP_PROTOCOL = getattr(settings, 'SQUEEZE_DEFAULT_HTTP_PROTOCOL', 'https')
 
 # Use when you're running more than one squeezemail app on the same server (multiple Django projects).
 # Note: Changing this changes your celery queue names. 'drips' changes to 'my_prefix_drips', so be sure to start
@@ -35,3 +35,5 @@ SQUEEZE_BROADCAST_EMAIL_RATE_LIMIT = getattr(settings, 'SQUEEZE_BROADCAST_EMAIL_
 SQUEEZE_BROADCAST_BACKEND_KWARGS = getattr(settings, 'SQUEEZE_BROADCAST_BACKEND_KWARGS', None)
 
 SQUEEZE_EMAIL_CONNECTION_TIMEOUT = getattr(settings, 'SQUEEZE_EMAIL_CONNECTION_TIMEOUT', None)
+
+SQUEEZE_SUBSCRIBER_IDLE_DAYS = getattr(settings, 'SQUEEZE_SUBSCRIBER_IDLE_DAYS', 90)
