@@ -98,7 +98,7 @@ All rebuilt links point to yourdomain.com/squeezemail/..., but doesn't have to b
 4. Create the squeezemail_extensions app.
 ::
 It has to be called "squeezemail_extensions". Do not add it to your settings.py installed apps.
-
+::
     ./manage.py startapp squeezemail_extensions
 
 Squeezemail is opinionated on some things, but doesn't dare to assume anything when it comes to rendering your emails. Slightly hacky because of the way Django is.
@@ -108,7 +108,7 @@ A richtext and image plugin are provided for you to subclass and add to your app
 5. Add your email message content blocks
 ::
 You'll want a Richtext plugin at the very least, but we'll add both a Richtext and Image plugin to get started.
-
+::
     # squeezemail_extensions.models.py
 
     from django.db import models
