@@ -1,19 +1,21 @@
 import json
+import logging
 
+import sys
 from django import forms
 from django.template import Context
-#from django.contrib.contenttypes.admin import GenericTabularInline
 from django.contrib import admin
-#from mptt.admin import DraggableMPTTAdmin
 
 # from squeezemail.actions.drip.models import DripOperator
 # from squeezemail.actions.modification.models import ModificationOperator
-from .models import EmailMessage, SentEmailMessage, QuerySetRule, Subject, Subscriber, RichText, Tag# Step, Funnel,  DripOperator, ModificationOperator, Subscription
+from .models import EmailMessage, SentEmailMessage, QuerySetRule, Subject, Subscriber, Tag
 from .handlers import configured_message_classes, message_class_for
 
 from content_editor.admin import (
-    ContentEditor, ContentEditorInline
+    ContentEditor
 )
+
+logger = logging.getLogger(__name__)
 
 
 # class QuerySetRuleInline(GenericTabularInline):
@@ -103,14 +105,6 @@ class EmailMessageForm(forms.ModelForm):
         exclude = []
 
 
-# class CampaignDripInline(admin.TabularInline):
-#     model = CampaignDrip
-
-
-# class CampaignAdmin(admin.ModelAdmin):
-#     inlines = [CampaignDripInline]
-
-
 class SubscriberAdmin(admin.ModelAdmin):
     # inlines = [SubscriptionInline]
     raw_id_fields = ('user',)
@@ -119,22 +113,6 @@ class SubscriberAdmin(admin.ModelAdmin):
     list_filter = ['created', 'is_active', 'idle']
 
 
-class RichTextInline(ContentEditorInline):
-    """
-    The only difference with the standard ``ContentEditorInline`` is that this
-    inline adds the ``feincms3/plugin_ckeditor.js`` file which handles the
-    CKEditor widget activation and deactivation inside the content editor.
-    """
-    model = RichText
-
-    class Media:
-        js = ('js/plugin_ckeditor.js',)
-
-
-# class ImageInline(ContentEditorInline):
-#     form = AlwaysChangedModelForm
-#     model = Image
-#     extra = 0
 class QuerySetRuleInline(admin.TabularInline):
     model = QuerySetRule
     exclude = ('parent', 'region', 'ordering',)
@@ -249,17 +227,6 @@ class EmailMessageAdmin(ContentEditor):
         return obj.spam_rate()
     spam_rate.short_description = "Spam Report Rate"
 
-    # list_display_links=(
-    #     'indented_title',
-    # )
-    # list_display = ('name', 'enabled', 'message_class')
-    inlines = [
-        EmailMessageSplitSubjectInline,
-        QuerySetRuleInline,
-        RichTextInline,
-        # ImageInline
-    ]
-
     form = EmailMessageForm
 
     # raw_id_fields = ['parent']
@@ -372,9 +339,15 @@ class SentEmailMessageAdmin(admin.ModelAdmin):
     spammed.short_description = "Spammed"
 
 
-admin.site.register(EmailMessage, EmailMessageAdmin)
+# admin.site.register(EmailMessage, EmailMessageAdmin)
 admin.site.register(Subscriber, SubscriberAdmin)
 # admin.site.register(Step, StepAdmin)
 admin.site.register(Tag)
 # admin.site.register(Funnel, FunnelAdmin)
 admin.site.register(SentEmailMessage, SentEmailMessageAdmin)
+
+try:
+    from squeezemail_extensions.admin import *
+except ImportError as error:
+    logger.error("You need to create a squeezemail_extensions app with admin.py inside.")
+    raise error.with_traceback(sys.exc_info()[2])
