@@ -1,1 +1,4 @@
 {{ content }}
+
+____________
+Unsubscribe: {{ unsubscribe_link }}
