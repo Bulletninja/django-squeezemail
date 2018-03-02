@@ -6,7 +6,7 @@ import sys
 
 name = 'django-squeezemail'
 package = 'squeezemail'
-description = 'Django email drip/autoresponder'
+description = 'Django mass emailer'
 url = 'https://github.com/kronok/django-squeezemail'
 author = 'Brandon Jurewicz'
 author_email = 'brandonjur@gmail.com'
@@ -57,7 +57,7 @@ if sys.argv[-1] == 'publish':
 
 setup(
     name='django-squeezemail',
-    version='0.13.4',
+    version='0.14.0',
     author=author,
     author_email=author_email,
     packages=get_packages(package),
@@ -69,14 +69,12 @@ setup(
     install_requires=[
         "Django >= 1.9.-",
         "django-content-editor",
-        'django-mptt',
         "feincms-cleanse",
         "django-timedeltafield >= 0.7.10",
         "django-ckeditor",
         "celery >= 3.1.22",
         "python-memcached >= 1.57",
         "html2text >= 2016.9.19",
-        "django-google-analytics-reporter >= 0.0.6",
-        "django-gfklookupwidget <= 1.0.5"
+        "django-versatileimagefield <= 1.9"
     ],
 )
