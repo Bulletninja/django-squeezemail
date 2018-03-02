@@ -4,7 +4,7 @@ import logging
 
 # from content_editor.contents import contents_for_item#, contents_for_items
 # from content_editor.renderer import PluginRenderer
-
+import sys
 
 try:
     from _md5 import md5  # Python 3
@@ -29,7 +29,7 @@ import timedelta as djangotimedelta
 # from mptt.models import MPTTModel, TreeForeignKey
 
 
-from squeezemail import SQUEEZE_EMAILMESSAGE_HANDLER
+from squeezemail import SQUEEZE_EMAILMESSAGE_HANDLER, SQUEEZE_SUBSCRIBER_IDLE_DAYS
 from squeezemail import SQUEEZE_PREFIX
 # from squeezemail import SQUEEZE_SUBSCRIBER_MANAGER
 from squeezemail import plugins
@@ -390,6 +390,9 @@ class EmailMessage(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        app_label = 'squeezemail'
+
     def handler(self, *args, **kwargs):
         kwargs['email_message_model'] = self
         handler_class = class_for(SQUEEZE_EMAILMESSAGE_HANDLER)
@@ -607,35 +610,35 @@ class SentEmailMessage(models.Model):
 
 
 class Open(models.Model):
-    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
+    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True, on_delete=models.CASCADE)
     date = models.DateTimeField(default=timezone.now)
     total = models.IntegerField(default=1)
 
 
 class Click(models.Model):
-    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
+    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True, on_delete=models.CASCADE)
     date = models.DateTimeField(default=timezone.now)
     total = models.IntegerField(default=1)
 
 
 class Spam(models.Model):
-    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
+    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True, on_delete=models.CASCADE)
     date = models.DateTimeField(default=timezone.now)
 
 
 class Unsubscribe(models.Model):
-    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
+    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True, on_delete=models.CASCADE)
     date = models.DateTimeField(default=timezone.now)
 
 
 class Bounce(models.Model):
-    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True)
+    sent_email_message = models.OneToOneField('SentEmailMessage', primary_key=True, on_delete=models.CASCADE)
     date = models.DateTimeField(default=timezone.now)
 
 
 # class QuerySetRule(StepPlugin):
 class QuerySetRule(models.Model):
-    email_message = models.ForeignKey('EmailMessage', null=True, blank=True, related_name="queryset_rules")
+    email_message = models.ForeignKey('EmailMessage', null=True, blank=True, related_name="queryset_rules", on_delete=models.CASCADE)
     # date = models.DateTimeField(auto_now_add=True)
     # lastchanged = models.DateTimeField(auto_now=True)
     # content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
@@ -773,7 +776,7 @@ class SubscriberManager(models.Manager):
 
 
 class Subscriber(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, related_name="squeeze_subscriber", null=True, blank=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, related_name="squeeze_subscriber", null=True, blank=True, on_delete=models.SET_NULL)
     email = models.EmailField(max_length=254, db_index=True, unique=True)
     is_active = models.BooleanField(verbose_name="Active", default=True)
     created = models.DateTimeField(default=timezone.now)
@@ -825,20 +828,19 @@ class Subscriber(models.Model):
         """
         Check if subscriber has any email activity (opens/clicks) over the past 90 days
         """
-        return Open.objects.filter(date__gte=timezone.now() - timezone.timedelta(days=90)).exists()
+        return Open.objects.filter(date__gte=timezone.now() - timezone.timedelta(days=SQUEEZE_SUBSCRIBER_IDLE_DAYS)).exists()
 
 
 EmailMessagePlugin = create_plugin_base(EmailMessage)
 
 
-class RichText(plugins.RichText, EmailMessagePlugin):
-    pass
+try:
+    from squeezemail_extensions.models import *
+except ImportError as error:
+    logger.error("You need to create a squeezemail_extensions app with models.py inside.")
+    raise error.with_traceback(sys.exc_info()[2])
 
 
-# class Image(plugins.Image, DripPlugin):
-#     url = models.TextField(max_length=500, null=True, blank=True)
-
-#
 # class DripOperator(StepPlugin):
 #     drip = models.ForeignKey('squeezemail.Drip', related_name='operators+')
 #

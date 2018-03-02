@@ -3,11 +3,9 @@ import sys
 import logging
 
 import html2text
-from django.utils import timezone
 from django.utils.safestring import mark_safe
 
-from google_analytics_reporter.tracking import Event
-from squeezemail.renderer import renderer
+
 
 PY3 = sys.version_info > (3, 0)
 import re
@@ -17,25 +15,28 @@ else:
     from urlparse import urlparse, urlunparse, parse_qsl
     from urllib import urlencode
 from django.conf import settings
-from django.core.urlresolvers import reverse
+
 from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.utils.functional import cached_property
 from django.core.mail import EmailMultiAlternatives
-# from django.utils.html import strip_tags
 from django.contrib.sites.models import Site
 try:
     # Django >= 1.9
     from django.utils.module_loading import import_module
 except ImportError:
     from django.utils.importlib import import_module
+try:
+    from django.core.urlresolvers import reverse
+except ImportError:
+    from django.urls import reverse
+
 from content_editor.contents import contents_for_item
-from content_editor.renderer import PluginRenderer
-from .utils import get_token_for_email
 from . import SQUEEZE_CELERY_EMAIL_CHUNK_SIZE, SQUEEZE_DEFAULT_HTTP_PROTOCOL, SQUEEZE_DEFAULT_FROM_EMAIL
-from .tasks import queue_email_messages_task, process_sent
-from .models import SentEmailMessage, Subscriber, RichText
+from .tasks import queue_email_messages_task
+from .models import SentEmailMessage, Subscriber
 from .utils import chunked
+from .renderer import renderer
 
 
 logger = logging.getLogger(__name__)
@@ -85,10 +86,8 @@ class RenderEmailMessage(object):
         return self.email_message.from_email_name
 
     def render_body(self):
-        # import the custom renderer and do renderer.plugins() instead
-        contents = contents_for_item(self.email_message, plugins=[RichText])
-        # assert False, contents['body']
-        body = renderer.render(contents['body']) #TODO: get split test feincms content here
+        contents = contents_for_item(self.email_message, plugins=renderer.plugins())
+        body = renderer.regions(self.email_message).render('body') #TODO: split test content here
         return body
 
     @property
@@ -166,7 +165,7 @@ class RenderEmailMessage(object):
         Turns into:
         new_url = http://YOURDOMAIN.com/squeezemail/link/?sq_user_id=1&sq_drip_id=1&sq_user_token=123456789&just=athingwedontcareabout&but=letsmakeitinteresting&sq_target=http://somedomain.com
 
-        When someone goes to the above new_url link, it'll hit our function at /link/ which re-creates the original url, but also passes user_id, drip_id, etc
+        When someone goes to the above new_url link, it'll hit our function at /link/ which re-creates the original url, but also passes subscriber_id, email_message_id, etc
         with it in case it's needed and redirects to the target url with the params. This is also where we throw some stats at Google Analytics.
         """
         site_domain = self.current_domain
@@ -326,15 +325,6 @@ class HandleEmailMessage(object):
                 result = message_instance.message.send()
                 if result:
                     SentEmailMessage.objects.create(email_message_id=self.email_message_model.id, subscriber_id=subscriber.id)
-                    # send a 'sent' event to google analytics
-                    process_sent.delay(
-                        user_id=subscriber.user_id,
-                        subject=message_instance.subject,
-                        email_message_id=self.email_message_model.id,
-                        email_message_name=self.email_message_model.name,
-                        source='step',
-                        split='main'
-                    )
                     successfully_sent_ids.append(subscriber.id)
             except Exception as e:
                 logging.error("Failed to send email message %s to subscriber %s: %s" % (str(self.email_message_model.id), str(subscriber.email), e))

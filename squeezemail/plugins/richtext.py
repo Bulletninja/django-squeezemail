@@ -9,7 +9,7 @@ from django.utils.html import mark_safe, strip_tags
 from django.utils.text import Truncator
 from django.utils.translation import ugettext_lazy as _
 
-# from content_editor.admin import ContentEditorInline
+from content_editor.admin import ContentEditorInline
 
 from ckeditor.fields import RichTextField
 from feincms_cleanse import Cleanse
@@ -108,10 +108,21 @@ class RichText(models.Model):
         abstract = True
         verbose_name = _('rich text')
         verbose_name_plural = _('rich texts')
+        app_label = 'squeezemail'
 
     def __str__(self):
         # Return the first few words of the content (with tags stripped)
         return Truncator(strip_tags(self.text)).words(10, truncate=' ...')
+
+
+class RichTextInline(ContentEditorInline):
+    """
+    The only difference with the standard ``ContentEditorInline`` is that this
+    inline adds the ``js/plugin_ckeditor.js`` file which handles the
+    CKEditor widget activation and deactivation inside the content editor.
+    """
+    class Media:
+        js = ('js/plugin_ckeditor.js',)
 
 
 def render_richtext(plugin, **kwargs):
