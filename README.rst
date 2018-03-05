@@ -131,7 +131,7 @@ You'll want a Richtext plugin at the very least, but we'll add both a Richtext a
     from django.utils.safestring import mark_safe
 
     from squeezemail.renderer import renderer
-    from squeezemail_extensions.models import Image, RichText, Recipe
+    from squeezemail_extensions.models import Image, RichText
 
 
     renderer.register_string_renderer(
@@ -161,8 +161,7 @@ You'll want a Richtext plugin at the very least, but we'll add both a Richtext a
             EmailMessageSplitSubjectInline,
             QuerySetRuleInline,
             RichTextInline.create(model=RichText),
-            ImageInline.create(model=Image),
-            RecipeInline,
+            ImageInline.create(model=Image)
         ]
 
 
