@@ -14,7 +14,7 @@ from content_editor.admin import ContentEditorInline
 from ckeditor.fields import RichTextField
 from feincms_cleanse import Cleanse
 
-__all__ = ('RichText', 'render_richtext', 'CleansedRichTextField', 'cleanse_html')
+__all__ = ('RichText', 'render_richtext', 'CleansedRichTextField', 'cleanse_html', 'RichTextInline')
 
 """
 HTML cleansing is by no means only useful for user generated content.
