@@ -1,11 +1,15 @@
 import logging
 import sys
-from content_editor.contents import contents_for_item
+
+
 from django.core.cache import cache
 from django.template import Context, Engine
 from django.template.loader import render_to_string
 from django.utils.functional import SimpleLazyObject
-from django.utils.safestring import mark_safe
+from django.contrib.sites.models import Site
+
+from content_editor.contents import contents_for_item
+from squeezemail import SQUEEZE_DEFAULT_HTTP_PROTOCOL
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,11 @@ def default_context(plugin, context):
     simply is a single variable named ``plugin`` containing the plugin
     instance.
     """
-    return {'plugin': plugin}
+    return {
+        'plugin': plugin,
+        'site': Site.objects.get_current(),
+        'scheme': SQUEEZE_DEFAULT_HTTP_PROTOCOL,
+    }
 
 
 class Regions(object):
@@ -139,8 +147,7 @@ class SqueezePluginRenderer(object):
         """
         self._renderers[plugin] = (None, renderer)
 
-    def register_template_renderer(
-            self, plugin, template_name, context=default_context):
+    def register_template_renderer(self, plugin, template_name, context=default_context):
         """register_template_renderer(self, plugin, template_name,\
 context=default_context)
         Register a renderer for ``plugin`` using a template. The template uses
