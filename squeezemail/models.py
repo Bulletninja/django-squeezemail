@@ -22,10 +22,7 @@ from django.conf import settings
 from django.utils.functional import cached_property
 from django.core.cache import cache
 from django.utils import timezone
-# from django.contrib.postgres.fields import JSONField
-# just using this to parse, but totally insane package naming...
-# https://bitbucket.org/schinckel/django-timedelta-field/
-import timedelta as djangotimedelta
+
 # from mptt.models import MPTTModel, TreeForeignKey
 
 
@@ -33,7 +30,7 @@ from squeezemail import SQUEEZE_EMAILMESSAGE_HANDLER, SQUEEZE_SUBSCRIBER_IDLE_DA
 from squeezemail import SQUEEZE_PREFIX
 # from squeezemail import SQUEEZE_SUBSCRIBER_MANAGER
 from squeezemail import plugins
-from squeezemail.utils import class_for, get_token_for_email, get_token_for_subscriber_id
+from squeezemail.utils import class_for, get_token_for_email, get_token_for_subscriber_id, string_to_timedelta
 
 from content_editor.models import (
     Region, create_plugin_base
@@ -350,7 +347,7 @@ class Tag(models.Model):
 
 
 class Subject(models.Model):
-    email_message = models.ForeignKey('squeezemail.EmailMessage', related_name='subjects')
+    email_message = models.ForeignKey('squeezemail.EmailMessage', related_name='subjects', on_delete=models.CASCADE)
     text = models.CharField(max_length=150)
     enabled = models.BooleanField(default=True)
 
@@ -581,8 +578,8 @@ class SentEmailMessage(models.Model):
     data (such as timestamps) to filter off, so you could see your open rate for a drip within the past 24 hours.
     """
     date = models.DateTimeField(default=timezone.now)
-    email_message = models.ForeignKey('squeezemail.EmailMessage', related_name='sent_email_messages')
-    subscriber = models.ForeignKey('squeezemail.Subscriber', related_name='sent_email_messages')
+    email_message = models.ForeignKey('squeezemail.EmailMessage', related_name='sent_email_messages', on_delete=models.CASCADE)
+    subscriber = models.ForeignKey('squeezemail.Subscriber', related_name='sent_email_messages', on_delete=models.CASCADE)
     # sent = models.BooleanField(default=False)
 
     class Meta:
@@ -689,16 +686,16 @@ class QuerySetRule(models.Model):
         # set time deltas and dates
         if self.field_value.startswith('now-'):
             field_value = self.field_value.replace('now-', '')
-            field_value = now() - djangotimedelta.parse(field_value)
+            field_value = now() - string_to_timedelta(field_value)
         elif self.field_value.startswith('now+'):
             field_value = self.field_value.replace('now+', '')
-            field_value = now() + djangotimedelta.parse(field_value)
+            field_value = now() + string_to_timedelta(field_value)
         elif self.field_value.startswith('today-'):
             field_value = self.field_value.replace('today-', '')
-            field_value = now().date() - djangotimedelta.parse(field_value)
+            field_value = now().date() - string_to_timedelta(field_value)
         elif self.field_value.startswith('today+'):
             field_value = self.field_value.replace('today+', '')
-            field_value = now().date() + djangotimedelta.parse(field_value)
+            field_value = now().date() + string_to_timedelta(field_value)
 
         # F expressions
         if self.field_value.startswith('F_'):
